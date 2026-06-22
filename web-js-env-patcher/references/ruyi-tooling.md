@@ -1,0 +1,326 @@
+# ruyiPage / RuyiTrace 集成流程
+
+当新 case 从一开始选择 ruyiPage / RuyiTrace 作为取证模式，或需要检测、安装、采集、导入 ruyiPage / RuyiTrace 材料时读取本文件。不要等确认目标站点存在自动化、CDP、JS Hook 或浏览器指纹检测后才使用 ruyiPage / RuyiTrace。
+
+## 来源与定位
+
+- ruyiPage：<https://github.com/LoseNine/ruyipage>
+  - Python Firefox 自动化框架。
+  - 基于 Firefox + WebDriver BiDi，不走 CDP。
+  - 支持配套 Firefox runtime、指纹浏览器、网络抓包、请求拦截、Cookie、本地存储、拟人动作等。
+- RuyiTrace / 如意 Trace：<https://github.com/LoseNine/Firefox-FingerPrint-Analyzer>
+  - Windows x64 桌面工具，随包包含定制 Firefox trace 内核。
+  - 采集 NDJSON 运行时 DOM / JS API 调用日志。
+  - 探针在浏览器内核层，适合为补环境提供高保真环境访问日志。
+
+仅在用户授权的网页端 JS 补环境、防御性分析、学术研究场景中使用。不要用这些工具绕过登录、验证码、MFA、付费墙、服务条款或业务风控。
+
+## RuyiTrace 优先诊断原则
+
+当用户确认取证模式为 **ruyiPage + RuyiTrace** 时，RuyiTrace NDJSON 不是可选参考，而是补环境阶段的优先证据源：
+
+1. 进入 Node.js 补环境前，必须先确认是否已经采集并导入 RuyiTrace NDJSON。
+2. 如果已有 NDJSON，先运行 `import_ruyitrace_log.js` 生成 `notes/ruyitrace-summary.md`，再阅读摘要和必要的原始日志片段。
+3. 遇到 ReferenceError、TypeError、输出不一致、缺失指纹对象、静默失败、toString / descriptor / accessor / 原型链 / `document.all` 异常等环境问题时，先回看 NDJSON，而不是直接盲补 `env.js`。
+4. 优先按以下证据定位：
+   - `api` 调用频率和类别。
+   - 与目标参数生成、请求发起、writer 写入时间邻近的调用。
+   - `stack.file / line / col` 指向的 JS 文件、模块和函数。
+   - navigator / screen / document / storage / canvas / WebGL / audio / crypto / performance / worker / iframe 等环境模块分类。
+5. 只有在 NDJSON 缺失、未覆盖当前路径、日志时间段不对应、或日志结论不足时，才使用 `run_with_trace.js`、Proxy trace、Hook 或断点作为补充。
+6. 输出补环境计划时，必须标明哪些环境依赖来自 RuyiTrace 证据，哪些只是 Node trace / 推断，避免把推断写成事实。
+
+如果用户选择了 ruyiPage + RuyiTrace 但尚未提供日志，进入补环境或遇到环境问题时应先暂停并提醒用户采集 / 提供 NDJSON；除非用户明确确认无法提供，才降级为 ruyiPage 网络证据 + Node trace 流程。
+
+如果用户选择了 ruyiPage + RuyiTrace 但检测到 RuyiTrace 未安装或目录不完整，不得自动改成“仅 ruyiPage”，也不要只建议“仅使用 ruyiPage”。必须先引导用户安装 / 提供 RuyiTrace 路径，或让用户明确确认降级；用户选择安装时，需要等待用户安装完成并再次验证通过后才继续任何依赖 NDJSON 的流程。
+
+## 取证工具选择权必须交给用户
+
+新网页端补环境任务开始后、任何取证动作之前，先让用户选择：
+
+```markdown
+请先选择本 case 的取证模式。后续抓包、JS 收集、Hook、断点、截图、RuyiTrace 日志采集等取证操作都会沿用该模式；如果后续需要切换工具，我会再次请求确认。
+
+1. ruyiPage + RuyiTrace（推荐）：用 ruyiPage 做 Firefox/BiDi 自动化取证，用 RuyiTrace 采集 NDJSON 环境日志辅助补环境。
+2. 仅 ruyiPage：只用 ruyiPage 打开页面、抓包、收集 JS，不采集 RuyiTrace 日志。
+3. CloakBrowser：沿用 Chromium/CloakBrowser 方案取证。
+4. 用户手动取证：你手动提供 cURL、HAR、JS 文件、调用栈截图、RuyiTrace 日志。
+5. AI 自行决定：我根据目标风险和本机工具可用性提出建议，但仍会在启动浏览器前再次确认。
+
+请回复你选择的编号，并说明是否已经安装 ruyiPage / RuyiTrace / CloakBrowser。
+```
+
+用户未选择前，不要直接启动浏览器工具；用户选择后，后续所有浏览器取证动作都必须沿用该选择，不能临时 fallback 到普通 Playwright、Puppeteer 或系统 Firefox。
+
+## 本机工具检测
+
+先运行检测脚本：
+
+```bash
+node scripts/check_external_tools.js --markdown
+node scripts/check_external_tools.js --json
+node scripts/check_external_tools.js --python python --ruyipage-install-dir <ruyipage-browsers-dir> --markdown
+node scripts/check_external_tools.js --python python --ruyipage-browser-path <firefox.exe> --markdown
+```
+
+**强制要求**：选择 ruyiPage 时，不能只检测 `import ruyipage` 是否成功，也不能把系统 Firefox fallback 当作可用。必须确认：
+
+- ruyiPage Python 包可导入。
+- Python 环境具备 `requests`，或已准备 `smart_fingerprint(manual_geo=...)` 所需地理信息；否则默认智能指纹地理探测会失败。
+- Firefox 可执行文件来自 ruyiPage managed runtime，或来自用户明确提供且可验证的 ruyiPage 定制 Firefox。
+- runtime 根目录存在 `install.json`。
+- `install.json.release`、`install.json.asset` 或 runtime 目录名体现 `ruyi` 定制标识，例如官方 manifest 当前使用的 `151-ruyi`。
+- `install.json.executable` 指向的 Firefox 文件确实存在。
+
+如果检测结果显示“系统 Firefox fallback / 未验证路径风险”，判定 ruyiPage 绕检测方案 **不通过**，暂停流程并要求用户提供定制 Firefox 路径或安装目录。
+
+如果用户已安装但脚本未检测到，要求用户提供：
+
+- ruyiPage：Python 解释器路径，或确认当前 `python` 可以 `import ruyipage`。
+- ruyiPage runtime：`python -m ruyipage path` 输出的 Firefox 路径、`--ruyipage-install-dir` 指向的 managed runtime 根目录，或 `--ruyipage-browser-path` 指向的定制 Firefox 可执行文件路径。
+- RuyiTrace：`RuyiTrace.exe` 所在目录，或 `RuyiTrace.exe` 路径；该目录中应保留 `firefox/` 子目录和 `firefox/RUYI_DOMTRACE.txt`。
+- 日志目录：RuyiTrace 生成 NDJSON 的目录。
+
+示例：
+
+```bash
+node scripts/check_external_tools.js --python python --ruyitrace-home <RuyiTrace-dir> --markdown
+node scripts/check_external_tools.js --python python --ruyipage-browser-path <verified-ruyipage-firefox.exe> --markdown
+```
+
+## ruyiPage + RuyiTrace 但 RuyiTrace 未安装
+
+当本 case 的取证模式已经确认为 **ruyiPage + RuyiTrace**，检测脚本返回 RuyiTrace 未安装、`RuyiTrace.exe` 不存在、`firefox/` 子目录缺失，或 `firefox/RUYI_DOMTRACE.txt` 缺失时，按以下强制流程处理：
+
+1. **不要自动降级**：不得把取证模式静默切换为“仅 ruyiPage”，也不得继续进入需要 RuyiTrace NDJSON 的补环境分析。
+2. **暂停并提示用户选择**：必须让用户在“安装 / 提供 RuyiTrace 路径”和“明确降级为仅 ruyiPage”之间选择。
+3. **用户选择安装 / 提供路径时**：
+   - 若已安装但未检测到，要求用户提供 `RuyiTrace.exe` 路径或所在目录。
+   - 若未安装，要求用户提供下载 / 安装目录。
+   - 先用 `download_ruyi_tool.js --tool ruyitrace --dest <download-dir> --dry-run --markdown` 输出下载计划。
+   - 用户确认后才下载；下载后提示用户解压 / 安装。
+   - 等用户确认 `RuyiTrace.exe` 可打开、`firefox/` 定制内核目录存在、日志目录可选择后，再重新运行检测。
+4. **用户选择降级时**：
+   - 记录“取证模式已由 ruyiPage + RuyiTrace 经用户确认降级为仅 ruyiPage”。
+   - 后续不得再假设存在 NDJSON。
+   - 补环境阶段使用 ruyiPage 网络证据、Hook / 断点证据、Node trace / Proxy trace 作为替代来源，并在输出中标明缺少 RuyiTrace 高保真日志。
+
+提示模板：
+
+```markdown
+你选择的是 ruyiPage + RuyiTrace，但当前未检测到可用的 RuyiTrace。该模式需要 RuyiTrace NDJSON 作为补环境优先证据源。
+
+请选择：
+1. 安装 / 提供 RuyiTrace 路径：我会先输出下载 / 安装计划，并等待你确认安装完成后再继续。
+2. 明确降级为“仅 ruyiPage”：后续不采集 RuyiTrace NDJSON，补环境将使用 ruyiPage 网络证据 + Hook / Node trace 作为替代。
+
+在你确认前，我不会自动降级，也不会继续需要 RuyiTrace 日志的流程。
+```
+
+## 未安装时的安装流程
+
+只有当用户明确说未安装，并确认允许下载 / 安装时，才进入本节。
+
+### ruyiPage
+
+先询问用户：
+
+```markdown
+未检测到 ruyiPage 定制 Firefox runtime，或当前 ruyiPage 可能会退回系统 Firefox。请确认：
+
+1. 你是否已经提前安装好 ruyiPage 定制 Firefox？
+2. 如果已经安装，请提供 ruyiPage browsers 安装目录，或提供定制 Firefox 的可执行文件路径。
+3. 如果没有安装，请提供希望安装到的目录。我会先输出安装计划；你确认后再执行安装。
+```
+
+推荐让用户自行在 Python 环境中安装：
+
+```bash
+python -m pip install ruyiPage --upgrade
+python -m pip install requests --upgrade
+python -m ruyipage install --install-dir <ruyipage-browsers-dir>
+python -m ruyipage doctor --install-dir <ruyipage-browsers-dir>
+python -m ruyipage path --install-dir <ruyipage-browsers-dir>
+```
+
+如果用户需要 async 支持：
+
+```bash
+python -m pip install "ruyiPage[async]" --upgrade
+```
+
+也可以使用随包安装脚本输出计划或在用户确认后安装：
+
+```bash
+node scripts/install_ruyipage_runtime.js --python python --install-dir <ruyipage-browsers-dir> --markdown
+node scripts/install_ruyipage_runtime.js --python python --install-dir <ruyipage-browsers-dir> --install --markdown
+```
+
+如果用户已自行准备 Firefox、便携版 Firefox 或 Firefox 指纹浏览器，只有在它确认为 ruyiPage 定制 Firefox 或用户明确说明是等价指纹浏览器时才可跳过 runtime 安装；普通系统 Firefox 不能作为绕自动化检测的 ruyiPage 方案。
+
+### RuyiTrace
+
+RuyiTrace 是桌面工具。安装原则：
+
+1. 先让用户提供下载目录。
+2. 仅在用户确认后下载 Release 资产。
+3. 下载完成后提示用户解压 / 安装，并保持 `RuyiTrace.exe` 与 `firefox/` 子目录在同一目录。
+4. 等用户确认 `RuyiTrace.exe` 可以打开且“定制内核”状态正常后，再继续。
+
+可用脚本查看下载计划或下载：
+
+```bash
+node scripts/download_ruyi_tool.js --tool ruyitrace --dest <download-dir> --dry-run --markdown
+node scripts/download_ruyi_tool.js --tool ruyitrace --dest <download-dir> --markdown
+```
+
+如只需要 ruyiPage 配套 Firefox runtime，优先使用 `python -m ruyipage install`；需要离线下载时再使用：
+
+```bash
+node scripts/download_ruyi_tool.js --tool ruyipage-firefox --dest <download-dir> --dry-run --markdown
+```
+
+下载脚本只负责下载，不默认解压、安装或启动桌面程序。
+
+## ruyiPage 取证流程
+
+用户选择 ruyiPage 后：
+
+1. 检查 ruyiPage 包、`requests` 依赖和 Firefox runtime，并确认 runtime 是 ruyiPage 定制 Firefox。
+   - 如果只检测到系统 Firefox fallback，立即暂停，不启动浏览器。
+   - 如果已找到定制 Firefox 但不是默认解析路径，启动时必须显式指定 `browser_path` / `set_browser_path`。
+   - 如果缺少 `requests`，必须安装依赖或让用户提供 `manual_geo`；不要静默跳过智能指纹。
+2. 按“ruyiPage 启动硬约束”启动；任一硬约束失败时，停止并报告，不要继续取证。
+3. 确认是否需要登录；需要登录时让用户手动完成。
+4. 使用有头模式打开页面。
+5. 触发最少量必要业务动作。
+6. 收集：
+   - Network / cURL / HAR。
+   - JS bundle / chunk / sourcemap URL。
+   - Cookie、本地存储键名、请求头、响应状态。
+   - source / entry / builder / writer 链路证据。
+7. 单个取证动作完成并沉淀必要结论后，立即清理临时截图、失败下载、临时日志和无登录态 profile；登录态 profile 单独询问用户是否保留。
+
+### ruyiPage 启动硬约束
+
+不要把“能启动浏览器”当作 ruyiPage 取证成功。每次 ruyiPage 取证都必须从一开始满足以下约束：
+
+| 约束 | 要求 |
+|---|---|
+| 定制内核 | 必须显式使用已验证的 ruyiPage 定制 Firefox runtime；不得使用系统 Firefox fallback |
+| 有头模式 | 必须 `headless(False)` 或等价有头模式；不要用 headless 做高风控取证 |
+| 独立 Profile | 使用本 case 专用临时 `user_dir` / profile，不复用脏 profile |
+| 智能指纹 | 默认调用 `opts.smart_fingerprint(require_country=None, base_dir=..., userdir=...)`；如果地理探测失败，要求安装 `requests` 或提供 `manual_geo`，不要静默跳过 |
+| 仿真注入 | 如果 `smart_fingerprint()` 返回 `ctx`，创建页面后必须执行 `ctx.apply_emulation(page)` |
+| 指纹一致性 | geolocation、timezone、locale、viewport 与 `smart_fingerprint` 输出保持一致；不要随意改成与出口 IP 冲突的国家 / 时区 |
+| 拟人动作 | 设置 `set_human_algorithm("windmouse")` 或 `"bezier"`，优先使用拟人滚动 / 点击触发业务动作 |
+| 取证时机 | `page.capture.start(...)` 必须在 `page.get(...)` 之前执行 |
+| 自检 | 导航后检查 `navigator.webdriver`，期望为 `false`；若为 `true`，判定当前取证不合格 |
+| 验收 | 目标接口必须捕获到非失败响应；对跨域接口不要把单独的 `OPTIONS` preflight 当作业务取证成功 |
+
+这些约束只能降低普通自动化 / CDP / 指纹检测风险，不能保证绕过所有业务风控、登录、验证码、MFA、设备验证或服务端策略。
+
+示例骨架：
+
+```python
+from ruyipage import FirefoxOptions, FirefoxPage
+
+opts = FirefoxOptions()
+opts.set_browser_path("<verified-ruyipage-managed-firefox>")
+opts.set_user_dir("<case-browser-profile>")
+opts.headless(False)
+opts.set_window_size(1366, 900)
+opts.set_human_algorithm("windmouse")
+
+ctx = opts.smart_fingerprint(
+    require_country=None,
+    base_dir="<case-tmp-fingerprint-dir>",
+    userdir="<case-browser-profile>",
+)
+
+page = FirefoxPage(opts)
+ctx.apply_emulation(page)
+page.capture.start(targets="<target-api-keyword>", collect_bodies=True)
+page.get("<target-page-url>")
+assert page.run_js("return navigator.webdriver") is False
+packets = page.capture.wait(timeout=30, count=1)
+```
+
+只有当 `node scripts/check_external_tools.js --markdown` 显示“默认解析路径是否为定制 Firefox：是”时，才可直接 `FirefoxPage()` 或 `launch(headless=False)`。否则必须显式指定已验证的定制 Firefox 路径。
+
+### ruyiPage 取证验收标准
+
+- JD `pc_home_feed` 类接口：至少捕获到 URL 包含 `pc_home_feed` 的 2xx 响应，并能看到请求 URL 中的加密 / 风控参数，例如 `h5st`。
+- 美团外卖 `shopList` 类跨域接口：必须区分 `OPTIONS` preflight 与真实业务请求；只有捕获到非 `OPTIONS` 的 2xx `shopList` 响应，才算取证成功。若返回登录 / Yoda / 401 风控信息，应按“需要登录 / 风控验证”流程暂停，不要宣称已绕过。
+
+## RuyiTrace 日志采集流程
+
+用户选择 RuyiTrace 后：
+
+1. 确认 `RuyiTrace.exe` 与 `firefox/` 子目录完整。
+2. 打开 `RuyiTrace.exe`。
+3. 填写启动页面。
+4. 选择日志目录，建议选择当前 case 的 `ruyi-trace/logs/` 或用户指定目录。
+5. 点击“开始采集”。
+6. 在浏览器中正常浏览并触发目标指纹 / 加密参数生成逻辑。
+7. 点击“停止采集”。
+8. 找到 `trace_<时间戳>_<PID>.ndjson`。
+9. 使用脚本复制到 case 并生成摘要：
+
+```bash
+node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --markdown
+```
+
+高级手动启动方式仅在用户理解环境变量时使用：
+
+```cmd
+set MOZ_DOM_TRACE=1
+set MOZ_DOM_TRACE_FILE=<trace-output.ndjson>
+set MOZ_DOM_TRACE_LIMIT=<max-lines>
+set MOZ_DISABLE_LAUNCHER_PROCESS=1
+<ruyitrace-firefox.exe> -no-remote -new-instance <target-page-url>
+```
+
+可选环境变量：
+
+| 变量 | 用途 |
+|---|---|
+| `MOZ_DOM_TRACE=1` | 开启 trace |
+| `MOZ_DOM_TRACE_FILE=<path>` | 输出路径，PID 自动追加 |
+| `MOZ_DOM_TRACE_LIMIT=<n>` | 单进程行数上限 |
+| `MOZ_DOM_TRACE_PTYPE=<list>` | 启用 trace 的进程类型 |
+| `MOZ_DISABLE_LAUNCHER_PROCESS=1` | Windows 下避免 launcher 提前退出 |
+
+## 根据 RuyiTrace 日志补环境
+
+日志导入后按以下顺序分析。选择 ruyiPage + RuyiTrace 的 case，必须先完成本节，再进入 Node.js 缺失环境追踪：
+
+1. 统计 `api` 调用频率，优先处理高频或和目标参数生成邻近的 API。
+2. 按 `stack.file / line / col` 聚合，定位具体 JS 文件和函数。
+3. 分类到环境模块：
+   - Navigator / Screen / Location / Storage。
+   - Canvas / WebGL / Audio / WebRTC。
+   - Crypto / Performance / Date / Random。
+   - DOM / Element / CSS / Layout。
+   - Worker / Service Worker / iframe。
+4. 将日志结论写入：
+   - `notes/ruyitrace-summary.md`
+   - `notes/missing-env-priority.md`：必须包含命中的 `api`、`stack.file`、`line`、`col`、环境模块分类、补齐优先级，以及“RuyiTrace 证据 / Node trace 补充 / 推断”标记。
+   - `notes/entry-chain.md`
+5. 再进入 Node.js 缺失环境追踪和 fixtures 验证。
+
+遇到环境错误时的处理顺序：
+
+1. 先在 `notes/ruyitrace-summary.md` 中搜索缺失对象、方法或相关模块，例如 `navigator`、`document.cookie`、`localStorage`、`canvas`、`WebGL`、`performance`。
+2. 摘要不足时，在原始 `case/ruyi-trace/logs/*.ndjson` 中按目标 JS 文件名、目标 API 关键词、调用栈行列号或时间窗口过滤。
+3. 将命中的 `api`、`stack.file`、`line`、`col`、参数摘要写入 `notes/missing-env-priority.md`。
+4. 再用 Node trace 复现缺失路径，确认哪些对象需要在 `env.js` 中固化；固化时要同时处理属性描述符、访问器、原型链、函数 / 访问器 / 实例对象 toString 保护。
+5. 如果 RuyiTrace 没有相关证据，明确标记“RuyiTrace 未覆盖”，再使用 Proxy trace / Hook / 断点继续排查。
+6. 交付前运行 `node scripts/check_env_realism.js --case-dir case --require-ruyitrace --markdown`；涉及 `document.all` 时加 `--require-document-all`。
+
+日志可能很大。大文件处理原则：
+
+- 不把完整日志直接写入最终报告。
+- 先导入并生成摘要。
+- 必要时按行分块，优先分析和目标 API / 参数生成时间段相关的片段。
+- 原始日志保存在 case 内，任务结束前询问是否保留。

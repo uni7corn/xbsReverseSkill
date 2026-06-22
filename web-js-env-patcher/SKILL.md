@@ -1,0 +1,703 @@
+---
+
+name: web-js-env-patcher
+
+description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于用户要求网页端 JS 补环境、Node.js 补环境、env.js/runner.js 编写、缺失浏览器环境追踪、Proxy 探测、真实对象固化、toString/native-like 保护、属性描述符 / 原型链默认保护、addon-first 默认补环境、新版 addon API 使用、通用代码变更记忆防回退、补环境代码可读性与中文注释质量检查、document.all 特殊对象处理、Canvas/WebGL/WebGPU/Audio/字体/DOM 几何等浏览器指纹终端 API 真实采样值回放、fixtures 样本验证、定位 sign/x-s/a_bogus/h5st/token 等 Web 加密参数、校验 cURL/HAR/请求样本、收集 JS bundle/chunk/sourcemap、Hook/XHR/fetch 断点定位、source/entry/builder/writer 链路梳理、Node 泄露阻断、静默失败排查、非登录 Cookie/设备 Cookie/风控 Cookie/JS 生成 Cookie 过期的来源分类与生成链路补环境、Level 1/2/3 补环境分层、从任务前置阶段即确认最终请求 TLS 指纹兼容客户端（Node.js CycleTLS/impers/curl-cffi、Python curl_cffi/cffi_curl/cyCronet）并在最终入口中使用所选客户端发送少量授权模拟请求、处理用户手动登录/已经登录成功后的继续流程，项目完成后默认生成中文命名 UTF-8 总结 result/最终项目总结.md，并在多轮任务中生成中文命名阶段报告，或从任务开始即确认 ruyiPage + RuyiTrace、仅 ruyiPage、Camoufox + camoufox-reverse-mcp、仅 Camoufox、CloakBrowser、用户手动取证、AI 自行决定等取证模式，并在授权范围内沿用所选工具完成浏览器取证与补环境日志采集；支持 Camoufox / camoufox-reverse-mcp 的安装检测、安装引导、官方启动硬约束、网络取证、脚本搜索、Hook、请求发起栈和可选引擎层属性访问追踪。不要用于 App/移动端/小程序/Windows/Native 逆向、纯算重写。"
+
+---
+
+
+
+# 网页端 JS Node.js 补环境
+
+
+
+## 能力边界
+
+
+
+使用本 Skill 处理 **网页端浏览器 JavaScript** 在 **Node.js** 中运行所需的前置分析、缺失环境追踪、环境对象补齐与样本验证。目标不是纯算重写算法，而是让目标网页原始 JS 在隔离且可控的 Node.js 运行上下文中运行，并用浏览器真实样本验证输出。
+
+
+
+严格边界：
+
+
+
+- 只处理网页端 / 浏览器端 JavaScript。
+
+- 只处理 Node.js 补环境相关任务。
+
+- 不处理 App、Android、iOS、小程序、Windows、EXE、DLL、Native、Frida、IDA、JADX、Ghidra 等任务。
+
+- 默认不做纯算重写，除非用户明确改变任务范围。
+
+
+
+## 参考资料读取规则
+
+
+
+根据任务需要按需读取以下文件，不要一次性加载无关内容：
+
+
+
+- `references/intake-template.md`：当用户信息不完整、询问需要提供什么、或需要复制填写模板时读取。
+
+- `references/workflow.md`：当需要规划或执行补环境前置流程时读取，包括请求校验、参数画像、入口定位、JS 文件收集和前置总结。
+
+- `references/crypto-entry-location.md`：当需要定位加密入口、梳理 `source → entry → builder → writer`、分析 XHR/fetch/拦截器/SDK 链路时读取。
+
+- `references/hook-templates.md`：当需要给用户生成浏览器 Hook、XHR/fetch 断点辅助脚本、或解释如何捕获调用栈时读取。
+
+- `references/browser-acquisition.md`：每次开始新的网页端补环境任务时读取，用于在任何取证动作前让用户选择取证模式；当需要浏览器交互、目标站存在自动化/CDP 检测、用户提到 ruyiPage、RuyiTrace、Camoufox、camoufox-reverse-mcp、CloakBrowser，或出现登录/验证码/MFA 时也读取；其中包含 Camoufox / camoufox-reverse-mcp、CloakBrowser 安装检测、官方启动入口和反自动化/CDP/指纹启动硬约束。
+
+- `references/ruyi-tooling.md`：当用户选择或询问 ruyiPage / RuyiTrace、需要检测安装、安装指导、下载工具、采集或导入 RuyiTrace NDJSON 日志时读取；如果取证模式为 ruyiPage + RuyiTrace，补环境或环境异常排查时也必须读取，用于优先从 NDJSON 日志定位环境依赖。
+
+- `references/camoufox-tooling.md`：当用户选择或询问 Camoufox / camoufox-reverse-mcp、需要检测安装、安装指导、MCP 配置、Camoufox 启动硬约束、网络取证、源码搜索、Hook、请求发起栈、环境对比、引擎层属性访问追踪或 Camoufox 临时产物清理时读取；Camoufox 只用于前置取证，不得进入最终 `result/`。
+
+- `references/env-debug-loop.md`：当前置材料已确认，准备在 Node.js 中运行目标 JS、追踪缺失环境、生成 `env.js` / `runner.js` 骨架时读取。
+
+- `references/env-object-model.md`：当需要补 `window`、`document`、`navigator`、`location`、`Storage`、`crypto`、`performance`、`fetch`、`XMLHttpRequest` 等对象模型时读取。
+
+- `references/env-native-protection.md`：每次进入 Node.js 补环境阶段或准备编写 / 修改 env 模块时读取；toString、属性描述符、原型链、访问器、实例对象 toString 与 addon-first 不是等检测到才做，而是默认硬性基线，除非用户明确要求不保护或不使用 addon。
+- `references/addon-api.md`：每次进入补环境阶段、使用 `addon.node`、修改 `native-protect.js` / addon helper、处理 `createProtoChains` / `createNativeObject` / `createUndetectable` / `getMimeTypesAndPlugins` / `getPrivate` / `setPrivate` 时读取；新代码优先新版 API，禁止把旧式 `createProtoChains(name, chain)` 或 `createNativeObject(tag, proto, properties)` 写成主路径。
+- `references/code-change-memory.md`：复杂 case、修改 `case/result/` 源码、反复修同一文件 / 函数、或任何关键工程逻辑存在回退风险时读取；默认维护 `case/notes/代码变更记忆.md`，记录改了什么、为什么改、已失败尝试、禁止回退、验证范围和遗留风险。
+- `references/code-style.md`：每次生成、重构或交付 `case/result/` 补环境代码前读取；用于约束最终代码简洁、模块化、可读、有中文注释、UTF-8 无乱码、中文注释不出现问号，并要求运行 `scripts/check_code_quality.js`。
+
+- `references/fingerprint-value-replay.md`：当目标 JS 访问 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹 API，或 Node.js 第三方库模拟结果与真实浏览器不一致时读取；用于真实浏览器采样、终端 API 值回放、禁止最终流程退回自动化。
+
+- `references/node-leakage-and-silent-failure.md`：当进入 Node.js 运行、输出不一致、怀疑 Node 泄露、SDK init 缺参、时间随机或存储差异时读取。
+
+- `references/env-module-levels.md`：当需要把 env 按 Level 1/2/3 分层、选择环境模块、复制 `assets/env-modules/` 模板时读取。
+
+- `references/fixture-validation.md`：当需要用浏览器真实样本验证 Node.js 输出、设计 fixtures、对比多组样本时读取。
+
+- `references/wasm-worker-postmessage.md`：当发现 Worker、WASM、iframe、postMessage 或异步消息链时读取。
+
+- `references/trust-matrix.md`：当需要标注证据可信度、避免把推断写成事实、处理敏感 Cookie/token 来源时读取。
+
+- `references/cookie-generation-analysis.md`：当 Cookie/token 过期、不需要登录的网站 Cookie 无效、参数位置为 Cookie、或需要分析 Set-Cookie / document.cookie / JS 计算 / Storage 派生 / challenge 生成链路时读取；用于区分登录态 Cookie 与非登录 Cookie，避免默认索要新 Cookie。
+
+- `references/case-patterns.md`：当需要识别 Header/Query/Body/SDK/异步消息等常见补环境模式时读取。
+
+- `references/delivery-templates.md`：只有 fixtures 通过并准备最终交付时读取；最终项目应是规范目录结构，但只能有一个直接执行入口 `final.js` 或 `final.py`，入口运行后完成生成加密参数、Node.js / Python 模拟请求和成功验证；不得交付多余测试文件、临时文件或浏览器自动化代码。
+
+- `references/tls-request-validation.md`：每个需要最终发送真实请求的 case 从前置阶段就读取，用于让用户选择最终请求 TLS 指纹兼容客户端；当用户提到 CycleTLS、impers、curl_cffi、cffi_curl、cyCronet，或准备把请求逻辑写入 `final.js` / `final.py` 时也读取。
+
+- `references/validation.md`：当需要测试 Skill 行为、编写预期提醒、检查边界场景时读取。
+
+- `references/stage-markdown-reports.md`：每个高难度、多轮对话或需要沉淀阶段结论的 case 从前置阶段开始读取；用于默认生成 `case/阶段报告/01-需求信息确认.md`、`02-取证方案确认.md`、`03-请求样本与可疑参数确认.md` 等中文命名 UTF-8 Markdown 阶段报告。
+
+- `references/final-project-summary.md`：项目完成后或准备最终交付时必须读取并生成 `result/最终项目总结.md`；最终总结是默认硬性产物，除非用户明确要求不生成。报告文件名必须为中文，必须用 UTF-8 写入，必须包含 native addon / NativeProtect 使用情况；RuyiTrace 章节仅在用户选择 ruyiPage + RuyiTrace 或提供 RuyiTrace NDJSON 时保留。
+
+- `references/cleanup.md`：当创建 case 目录、临时文件、HAR、浏览器 Profile、hook 脚本、trace 或日志时读取。
+
+
+
+## 必须执行的主流程
+
+
+
+1. **范围确认**：确认任务属于网页端 JS 的 Node.js 补环境。如果不属于，停止并说明边界。
+
+2. **取证模式先确认**：在开始请求校验、打开页面、抓包、收集 JS、Hook、断点、截图、RuyiTrace 日志采集等任何取证动作前，先让用户选择并确认取证模式：ruyiPage + RuyiTrace（推荐）、仅 ruyiPage、Camoufox + camoufox-reverse-mcp、仅 Camoufox、CloakBrowser、用户手动取证、或 AI 自行决定。用户未选择前不要启动任何浏览器工具。
+
+3. **取证模式贯穿全流程**：把用户确认的模式记录为本 case 的取证模式；之后所有浏览器取证动作都必须使用该模式。若后续发现该模式不可用、工具缺失、需要登录、或必须切换工具，先暂停并征得用户确认，不得自行改用普通 Playwright / Puppeteer / 系统 Firefox。
+
+4. **最终请求 TLS 客户端先确认**：如果本 case 最终需要发送真实请求或交付 `final.js` / `final.py`，在前置阶段就让用户选择 TLS 指纹兼容请求客户端：Node.js CycleTLS、Node.js impers、Python curl_cffi / cffi_curl、Python cyCronet，或明确选择“不发真实请求，只输出本地 sign / 参数”。不要等普通 fetch / requests 失败后才临时考虑 TLS 指纹兼容；最终真实请求必须限制为少量授权验证，不得用于批量访问或绕过登录、验证码、MFA、访问控制。
+
+5. **信息完整性检查**：确认用户至少提供：目标网站或目标页面 URL、目标接口 API URL、请求方法、目标加密参数名、参数位置、至少一份成功请求样本、取证模式、最终请求 TLS 指纹兼容客户端或“不发真实请求”选择。
+
+6. **信息不完整时**：不要开始逆向分析或补环境代码。列出缺失项，并让用户按模板补充。
+
+7. **信息完整时**：先整理任务确认信息，让用户确认后再继续。确认内容必须包含网站 URL、API、方法、参数名、参数位置、请求样本、响应样本、已知 JS 文件、是否需要登录、取证模式、最终请求 TLS 指纹兼容客户端。
+
+8. **阶段报告默认生成**：从需求信息确认阶段开始，默认读取 `references/stage-markdown-reports.md` 并生成中文命名阶段报告；即使信息不完整，也要写入 `case/阶段报告/01-需求信息确认.md`，记录已提供信息、缺失项、阻塞点和下一步需要用户确认的问题。后续每个关键阶段结束后继续生成或更新 `02-取证方案确认.md`、`03-请求样本与可疑参数确认.md`、`04-JS文件与入口定位.md`、`05-补环境前置分析.md`、`06-补环境实现记录.md`、`07-验证与清理记录.md`。除非用户明确要求不生成阶段报告，否则不得只在最后生成一个总结文件。
+
+9. **先做前置验证**：在写 `env.js` 或正式补环境代码之前，先确认请求样本中确实存在目标加密参数，并确认相关 JS 文件可以获取。
+
+10. **可疑加密参数必须先全量列出并让用户确认**：解析 cURL / HAR / 请求样本时，必须列出所有可疑加密参数（Query / Header / Body / Cookie 中的 sign、token、a_bogus、h5st、x-s、x-t、mtgsig、w_rid 等以及其他高熵动态字段），即使用户已经指定了某个参数，也要提示是否还有其他参数需要一并分析。用户未确认“本次要分析哪些参数”前，不得进入正式补环境阶段。
+
+11. **Cookie 过期先分类**：遇到 Cookie/token 无效、过期或请求因 Cookie 失败时，先判断它是否属于登录态 / 账号授权；对不需要登录或与登录无关的设备 Cookie、风控 Cookie、首访 Cookie、JS 生成 Cookie，必须分析生成或刷新链路并纳入 `source → entry → builder → writer`，不要默认要求用户重新提供一份新 Cookie。
+
+12. **加密链路必须四层化**：入口定位输出必须包含 `source → entry → builder → writer`。只找到疑似函数但没确认 writer 时，不视为完成定位。
+
+13. **Hook 优先，断点兜底**：授权调试中先用用户已确认的取证模式执行最小 Hook 捕获 fetch/XHR/Header/Query/Body/Cookie 写入，再用对应工具的断点或日志能力确认源码位置和调用栈。
+
+14. **ruyiPage 强校验**：选择 ruyiPage 或 ruyiPage + RuyiTrace 时，必须先验证其使用 ruyiPage 定制 Firefox runtime；只检测到系统 Firefox fallback 时不视为通过，需暂停并询问用户是否已安装定制 Firefox 或提供安装目录。正式取证必须从第一次打开页面开始就使用有头模式、专用临时 Profile、`smart_fingerprint()`、`ctx.apply_emulation(page)`、一致的地理/时区/语言/窗口参数，并在导航后自检 `navigator.webdriver === false`；任一约束失败时不要继续取证。
+
+15. **RuyiTrace 未安装不自动降级**：如果用户已选择 ruyiPage + RuyiTrace，但检测到 RuyiTrace 未安装或目录不完整，必须暂停并提示用户二选一：安装 / 提供 RuyiTrace 路径，或明确确认降级为“仅 ruyiPage”。用户选择安装时，先输出下载 / 安装计划，等待用户安装并确认 `RuyiTrace.exe` 可打开且 `firefox/` 定制内核完整后再继续；在用户确认前不得继续需要 RuyiTrace NDJSON 的补环境流程。
+
+16. **Camoufox 安装与启动强校验**：如果用户选择 Camoufox 或 Camoufox + camoufox-reverse-mcp，必须在启动任何浏览器前运行 `scripts/check_external_tools.js --require-camoufox --markdown`；选择 MCP 时必须加 `--require-camoufox-mcp`，必要时加 `--python`、`--camoufox-install-dir` 或 `--camoufox-mcp-project-dir`。未检测到 Camoufox Python 包、未执行 `python -m camoufox fetch` 下载浏览器本体、或 MCP 不可导入时暂停：已安装则要求用户提供 Python 解释器 / venv、Camoufox 缓存目录、浏览器路径或 MCP 项目目录；未安装则引导用户确认安装目录和安装方式。正式取证必须从第一次打开目标页开始使用 Camoufox 官方入口或 camoufox-reverse-mcp，默认有头、`humanize:true`，代理场景按授权启用 `geoip:true` / `block_webrtc:true`，不得先用普通 Playwright / Puppeteer / 系统浏览器探测。
+
+17. **CloakBrowser 安装与启动强校验**：如果用户选择 CloakBrowser，必须在启动任何浏览器前运行 `scripts/check_external_tools.js --require-cloakbrowser --markdown`，必要时加 `--cloakbrowser-project-dir`、`--cloakbrowser-binary-path` 或 `--python`。未检测到包或 stealth Chromium 二进制时暂停：已安装则要求用户提供 Python 解释器、Node 项目目录或二进制路径；未安装则引导用户确认 Python / Node.js 安装路线并等待安装。正式取证必须从第一次打开目标页开始使用官方 `cloakbrowser` 包装器，默认 `headless:false`、`humanize:true`，不得先用普通 Playwright / Puppeteer / 系统浏览器探测，也不得直接 `chromium.launch()`。
+
+18. **登录策略**：绝不索要账号、密码、验证码或 MFA 密钥。需要登录时暂停，让用户在所选取证工具或用户手动浏览器中完成登录；只有用户回复 `已经登录成功` 并确认登录后流程后，才继续。
+
+19. **进入补环境阶段前再次确认**：只有在参数、入口、JS 文件、样本、取证模式和最终请求客户端都已确认后，才进入 Node.js 缺失环境追踪和补环境代码阶段。
+
+20. **RuyiTrace 优先诊断**：如果取证模式为 ruyiPage + RuyiTrace，或用户明确说已经 trace 好 / 已提供 NDJSON 日志，进入补环境阶段、编写 `env.js`、补任何 WebAPI，或遇到 ReferenceError、TypeError、输出不一致、指纹对象缺失、静默失败、toString / descriptor / 原型链异常等环境问题时，必须先导入并查看 RuyiTrace NDJSON 与 `notes/ruyitrace-summary.md`，按 `api`、`stack.file / line / col`、时间邻近度和目标参数生成链路定位环境依赖；必须把命中证据写入 `notes/missing-env-priority.md` 后再补环境。只有日志缺失、不覆盖该逻辑或结论不足时，才使用 `run_with_trace.js` / Proxy trace 作为补充。不得在已有可用 NDJSON 时跳过日志直接盲补 `env.js`。
+
+21. **指纹值回放优先**：遇到 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等浏览器指纹时，不要在 Node.js 中强行复刻渲染管线，也不要因 node-canvas / headless-gl / jsdom 等结果不一致而建议最终改用浏览器自动化；应先用已确认取证模式采集真实浏览器终端 API 返回值、调用参数和调用栈，再在 Node.js 交付环境中按调用特征回放。缺少指纹样本时必须阻塞并提示补采样，不得静默伪造默认值。自动化工具只允许用于前置采样，不能进入最终项目。
+
+22. **Node 泄露先阻断**：正式运行目标 JS 前先确认目标 JS 所在运行上下文不暴露 `process/Buffer/require/module/global`；推荐使用 `vm`、独立 Node 进程或显式隔离全局对象，但不强制所有补环境行为只能在 `vm` 上下文中进行，并执行六项纯计算预检或说明跳过原因。
+
+23. **补环境初始化即 addon-first**：进入 Node.js 补环境阶段的第一步就必须运行 `scripts/load_native_addon.js --json` 或在 env 初始化代码中等价加载 / 记录 addon 可用性；不要等检测到 `toString`、属性描述符、原型链或 `document.all` 问题后才考虑 addon。创建 native-like 函数、构造函数、getter、setter、实例对象、`document.all`、`createNativeObject` / `createProtoChains` 支持的对象时，addon 可用必须优先使用 addon API；只有用户明确要求不使用 addon、addon 缺失、ABI 不兼容或调用失败时，才降级为 `NativeProtect` / JS fallback，并把豁免或降级原因写入 notes、阶段输出和最终总结。
+
+24. **真实性保护默认开启**：补环境阶段采用探测 / 交付双模式，探测模式允许 Proxy 记录访问路径；从第一次编写 env 骨架开始就必须按真实浏览器对象模型固化关键 WebAPI，而不是等 trace 或目标检测命中后才补保护。所有新增或修改的关键 WebAPI 默认使用 `Object.defineProperty` / `defineProperties` 描述符、getter / setter、构造函数、原型链、函数 toString 保护、访问器 toString 保护、实例对象 `Object.prototype.toString` / `Symbol.toStringTag` 保护、`constructor` 和 `instanceof` 链路；只有用户明确要求关闭保护时才可豁免并记录原因。
+25. **通用代码变更记忆默认维护**：复杂 case 或修改任何关键源码前必须读取 `references/code-change-memory.md`，并读取 / 创建 `case/notes/代码变更记忆.md`；修改前搜索相关文件名、函数名、参数名和错误关键词，避免写回已失败方案；修改后立即追加记录，写明修改前逻辑、问题证据、本次修改、修改理由、已失败尝试、禁止回退、验证命令、验证结果、当前验证范围、遗留风险和当前状态。不要把“当前报错消失”写成无验证范围的固定结论，只能写成“临时修复”“当前验证通过”“稳定基线”等有范围的状态；交付前必须按本轮变更运行 `scripts/check_change_memory.js --case-dir case --changed <file> --require-entry --markdown` 或说明用户明确豁免。
+
+26. **补环境代码质量默认约束**：生成或修改最终补环境代码前必须先读取 `references/code-style.md`，先规划目录和文件职责，再编码；代码必须简洁、模块化、具名函数清晰、无压缩堆叠、无临时调试痕迹，并在文件头、关键 WebAPI、getter / setter、addon-first、fallback、指纹回放和加密入口处写中文注释。中文注释必须 UTF-8 正常显示，不得包含问号、连续问号或乱码；交付前必须运行 `scripts/check_code_quality.js --case-dir case --markdown`。
+
+27. **按 Level 1/2/3 分层补齐**：先基础运行层，再指纹真实性层，最后目标 SDK 专用层；不要把站点私有逻辑污染通用 env。
+
+28. **结果不一致先排查静默失败**：不报错但参数不一致时，若取证模式为 ruyiPage + RuyiTrace，先回看 NDJSON 中与 Date / performance / random / storage / navigator / canvas / WebGL / Worker / WASM 邻近的调用栈，再按请求样本、init 参数、存储、时间随机、加载顺序、toString、descriptor、原型链、Worker/WASM 顺序排查；若涉及 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何，先检查真实浏览器采样值和回放匹配 key。
+
+29. **样本验证优先**：不要以“不报错”为完成标准，必须用 fixtures 对比浏览器真实加密参数或关键输出。浏览器取证也不要以“抓到任意包”为成功标准；目标接口必须有非失败业务响应，跨域接口不能把单独的 `OPTIONS` preflight 当作成功。
+
+30. **最终交付必须是规范项目且只有一个入口**：最终交付可以包含规范目录和必要模块，例如 `src/env/`、`src/signer/`、`src/request/`、`package.json` 或 Python 包模块；但只能有一个直接执行入口，默认 `result/final.js`，用户明确选择 Python 请求验证时可为 `result/final.py`。执行该入口必须自动完成“安装补环境 → 调用目标入口生成加密参数 → 使用已确认的 Node.js / Python TLS 指纹兼容客户端发送模拟请求或按用户选择只输出本地参数 → 输出请求成功/失败结果”。不要把测试脚本、临时 runner、server、bridge、trace、HAR、hook、截图、Profile、缓存、指纹采样 Hook 或临时响应作为最终产物交付。
+
+31. **最终项目禁止浏览器自动化代码**：最终项目内任何交付文件都不得包含 ruyiPage、RuyiTrace 启动、Camoufox、camoufox-reverse-mcp、CloakBrowser、Playwright、Puppeteer、Selenium、CDP、WebDriver、`launch_browser`、`network_capture`、`page.goto`、`browser.launch` 等自动化取证代码。ruyiPage / RuyiTrace / Camoufox / camoufox-reverse-mcp / CloakBrowser 只允许出现在前置取证和日志分析阶段，不能进入最终项目代码。
+
+32. **最终发送请求只能用已确认的 Node.js 或 Python 客户端**：最终验证必须由 `final.js` 入口调用 Node.js CycleTLS / impers 等模块，或由 `final.py` 入口调用 curl_cffi / cffi_curl / cyCronet 等模块发起请求；不得先用普通客户端失败后再临时切换，不得生成加密参数后再通过浏览器自动化点击、导航或抓包验证。
+
+33. **TLS 指纹兼容不是访问控制绕过**：TLS 指纹兼容客户端用于复现浏览器网络栈差异导致的最终验证请求。
+
+34. **交付前自动检查、阶段报告与最终总结**：项目完成后默认先读取 `references/final-project-summary.md` 并使用 `scripts/write_markdown_utf8.js` 生成中文命名 `case/result/最终项目总结.md`；同时确认 `case/阶段报告/` 至少存在 `01-需求信息确认.md`，并根据实际过程生成其他阶段报告。只有用户明确要求不生成最终总结或阶段报告时才可跳过并记录原因。交付前必须运行 `scripts/check_change_memory.js --case-dir case --markdown`、`scripts/check_code_quality.js --case-dir case --markdown`、`scripts/check_env_realism.js --case-dir case --markdown`（addon-first 默认强制；使用 RuyiTrace、涉及 `document.all` 或涉及指纹值回放时加对应参数），再运行 `scripts/check_final_artifact.js --case-dir case --markdown` 或等价人工检查，确认代码可读性与中文注释质量、补环境真实性、addon-first/native fallback 记录、通用代码变更记忆、RuyiTrace 证据沉淀、指纹 fixture 与回放实现、中文命名最终总结、阶段报告、最终项目只有一个执行入口、入口可直接运行、整个项目无自动化工具代码、请求由已确认的 Node.js / Python 客户端实现、无多余测试/临时产物。
+
+35. **清理策略**：每个测试命令、脚本验证或阶段结束后立即清理本步骤产生的临时 hook、trace、日志、缓存、失败下载、无用 HAR、临时截图、临时响应、空文件和空目录；不要等项目完全结束后再统一清理。最终回复前必须复查清理结果。登录态 Profile、Cookie、localStorage 按敏感材料处理，删除前必须确认用户意图。
+
+
+
+## 辅助脚本
+
+
+
+这些脚本只作为稳定性辅助，不能替代人工判断。
+
+
+
+### 检查用户信息完整性
+
+
+
+```bash
+
+node scripts/check_intake.js --input task.md --markdown
+
+node scripts/check_intake.js --input task.md --json
+
+```
+
+
+
+### 检查 cURL / 请求样本
+
+
+
+```bash
+
+node scripts/parse_curl.js --input request.curl --param sign --position header --markdown
+
+node scripts/parse_curl.js --input request.curl --json
+
+```
+
+
+
+`parse_curl.js` 会输出所有可疑加密参数候选。进入正式补环境前，必须把候选列表交给用户确认；cURL 中已有的加密参数值只能作为 fixture 期望值，不得写入最终产物作为固定值。
+
+
+
+### 创建补环境 case 目录
+
+
+
+```bash
+
+node scripts/init_env_case.js --case-dir case --target app.js --entry window.makeSign --param sign --api https://example.com/api/search
+
+```
+
+
+
+### 加载可选 native addon
+
+
+
+```bash
+
+node scripts/load_native_addon.js --json
+
+node scripts/load_native_addon.js --addon <path-to-addon.node> --json
+
+```
+
+
+
+本 Skill 随包携带可选 native addon，默认从 `assets/native-addon/<platform>-<arch>/addon.node` 自动加载；“可选”只表示不是跨平台强依赖，不表示可以在补环境时跳过。进入补环境阶段就要尝试加载并记录结果；一旦当前平台可用，创建函数、访问器、`document.all`、原型链等 addon 支持能力时必须优先使用 addon。只有用户明确要求不使用 addon、当前平台缺失、Node ABI 不兼容或 addon 调用失败时，才降级到 `NativeProtect` / JS fallback，或由用户显式提供 `--addon` / `WEB_JS_ENV_PATCHER_ADDON` 覆盖路径。不要在 Skill 文档或脚本中写入本机绝对路径。
+
+
+
+### 检测 ruyiPage / RuyiTrace / Camoufox / CloakBrowser / 外部浏览器工具
+
+
+
+```bash
+
+node scripts/check_external_tools.js --markdown
+
+node scripts/check_external_tools.js --python python --ruyipage-install-dir <ruyipage-browsers-dir> --markdown
+
+node scripts/check_external_tools.js --python python --ruyipage-browser-path <firefox.exe> --ruyitrace-home <RuyiTrace-dir> --json
+
+node scripts/check_external_tools.js --require-cloakbrowser --cloakbrowser-project-dir <node-project-dir> --markdown
+
+node scripts/check_external_tools.js --python python --require-cloakbrowser --cloakbrowser-binary-path <chromium-or-chrome-path> --json
+
+node scripts/check_external_tools.js --python python --require-camoufox --camoufox-install-dir <camoufox-cache-dir> --markdown
+
+node scripts/check_external_tools.js --python python --require-camoufox --require-camoufox-mcp --camoufox-mcp-project-dir <camoufox-reverse-mcp-dir> --json
+
+```
+
+
+
+ruyiPage 只有在“Python 包可用 + 定制 Firefox runtime 验证通过”时才视为可用；普通系统 Firefox fallback 不能作为通过结果。
+
+CloakBrowser 只有在检测到官方 Python / Node.js 包并能确认 stealth Chromium 二进制或用户确认预下载流程后，才可进入正式取证；不得用普通 Playwright / Puppeteer 代替。
+
+Camoufox 只有在检测到 Python 包、官方 `python -m camoufox fetch` 下载的浏览器本体、并确认使用 `Camoufox(...)` / `AsyncCamoufox(...)` 或 camoufox-reverse-mcp 官方入口启动时，才可进入正式取证；不得把普通 Playwright Firefox 当作 Camoufox。
+
+
+
+### 安装 ruyiPage 定制 Firefox runtime
+
+
+
+只有用户确认未安装并提供安装目录后才执行真实安装；默认先 dry-run 输出计划：
+
+
+
+```bash
+
+node scripts/install_ruyipage_runtime.js --python python --install-dir <ruyipage-browsers-dir> --markdown
+
+node scripts/install_ruyipage_runtime.js --python python --install-dir <ruyipage-browsers-dir> --install --markdown
+
+```
+
+
+
+### 下载 Ruyi 工具 Release 资产
+
+
+
+只有用户确认未安装并提供下载目录后才运行：
+
+
+
+```bash
+
+node scripts/download_ruyi_tool.js --tool ruyitrace --dest <download-dir> --dry-run --markdown
+
+node scripts/download_ruyi_tool.js --tool ruyitrace --dest <download-dir> --markdown
+
+node scripts/download_ruyi_tool.js --tool ruyipage-firefox --dest <download-dir> --dry-run --markdown
+
+```
+
+
+
+### 导入 RuyiTrace NDJSON 日志
+
+
+
+```bash
+
+node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --markdown
+
+```
+
+
+
+### 运行目标 JS 并追踪缺失环境
+
+
+
+```bash
+
+node scripts/run_with_trace.js --target case/js/original/app.js --entry window.makeSign --fixture case/fixtures/sample.fixture.json --trace case/tmp/env-trace.jsonl --summary case/tmp/missing-env.json --output case/tmp/node-output.json
+
+```
+
+
+
+用于探测模式：默认可在受控 `vm` 上下文中运行目标 JS，也可按 case 需要使用独立 Node 进程或显式隔离的目标运行上下文；关键要求是不把宿主 `process/Buffer/require/module/global` 暴露给目标 JS，并记录环境访问、函数调用、构造调用和运行错误。
+
+
+
+### 分析 trace 并给出补齐优先级
+
+
+
+```bash
+
+node scripts/analyze_trace.js --trace case/tmp/env-trace.jsonl --summary case/tmp/missing-env.json --markdown
+
+```
+
+
+
+
+### 检查补环境代码可读性与中文注释
+
+```bash
+node scripts/check_code_quality.js --case-dir case --markdown
+node scripts/check_code_quality.js --dir case/result --json
+node scripts/check_code_quality.js --file case/result/src/env/install-env.js --markdown
+```
+
+用于交付前检查最终代码是否简洁、模块化、具名函数清晰、无压缩堆叠、无调试断点，且中文注释使用 UTF-8 正常显示、没有连续问号、没有乱码、中文注释不包含问号。检查失败时必须先重构代码和修复注释，再继续最终交付。
+
+### 通用代码变更记忆
+
+```bash
+node scripts/check_change_memory.js --case-dir case --init --markdown
+node scripts/check_change_memory.js --case-dir case --markdown
+node scripts/check_change_memory.js --case-dir case --changed result/src/env/install-env.js --require-entry --markdown
+```
+
+用于复杂 case 或关键源码修改的防回退检查。修改关键源码前先读取 `case/notes/代码变更记忆.md`，修改后立即记录修改前逻辑、问题证据、本次修改、修改理由、已失败尝试、禁止回退、验证命令、验证结果、当前验证范围、遗留风险和当前状态。检查失败时必须先补齐记录或说明用户明确豁免。
+
+### 检查补环境真实性与 RuyiTrace 证据
+
+
+
+```bash
+
+node scripts/check_env_realism.js --case-dir case --markdown
+
+node scripts/check_env_realism.js --case-dir case --require-document-all --require-ruyitrace --require-fingerprint-fixture --json
+
+```
+
+
+
+用于进入最终交付前检查：是否按规则补了属性描述符、原型链、函数 / 访问器 / 实例对象 toString 保护、addon-first/native fallback 记录、`document.all` 不可检测对象、指纹终端 API 值回放；如果 case 使用 RuyiTrace 或用户已提供 NDJSON，还会检查 `notes/ruyitrace-summary.md` 与 `notes/missing-env-priority.md` 是否存在并体现 trace 证据。
+
+
+
+### 生成浏览器 Hook 模板
+
+
+
+```bash
+
+node scripts/generate_hook_templates.js --param sign --api-pattern /api/ --types fetch,xhr,cookie,storage --out case/hooks/hooks.js
+
+```
+
+
+
+### 生成指纹终端 API 采样 Hook
+
+
+
+```bash
+
+node scripts/generate_fingerprint_hook.js --types canvas,webgl,dom-geometry --out case/hooks/fingerprint-hook.js
+
+node scripts/generate_fingerprint_hook.js --types canvas,webgl,webgpu,audio,dom-geometry --max-data-url-length 100000
+
+```
+
+
+
+该 Hook 只用于前置取证采样，不得放入最终 `result/` 交付目录。
+
+
+
+### 检查指纹 fixture 与回放实现
+
+
+
+```bash
+
+node scripts/check_fingerprint_fixture.js --case-dir case --require canvas,webgl --markdown
+
+node scripts/check_fingerprint_fixture.js --fixture case/fixtures/fingerprint.fixture.json --env-file case/result/src/env/fingerprint-env.js --json
+
+```
+
+
+
+### Node 泄露阻断与纯计算预检
+
+
+
+```bash
+
+node scripts/check_node_leakage.js --markdown
+
+node scripts/precheck_runtime.js --markdown
+
+```
+
+
+
+### 检测最终请求验证的 TLS 指纹兼容客户端
+
+
+
+```bash
+
+node scripts/check_tls_clients.js --markdown
+
+node scripts/check_tls_clients.js --python python --json
+
+```
+
+
+
+### 对比 fixtures 验证输出
+
+
+
+```bash
+
+node scripts/compare_fixture.js --fixture case/fixtures/sample.fixture.json --actual case/tmp/node-output.json --field sign --markdown
+
+```
+
+
+
+### 写入 UTF-8 Markdown 报告
+
+
+
+```bash
+
+node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md --out case/result/最终项目总结.md --require-chinese-name --markdown
+
+node scripts/write_markdown_utf8.js --out case/result/最终项目总结.md --require-chinese-name --markdown < case/tmp/最终项目总结草稿.md
+
+```
+
+
+
+用于项目完成后默认生成中文命名 `case/result/最终项目总结.md`，以及其他复盘报告等中文 Markdown 写入，避免 Windows shell 默认编码导致中文变成 “连续问号”。如果脚本检测到草稿疑似已经乱码，会拒绝覆盖并要求重新生成。除非用户明确要求不生成最终总结，否则交付前必须生成该文件。
+
+
+### 写入阶段性中文 Markdown 报告
+
+```bash
+node scripts/write_stage_report.js --case-dir case --stage 需求信息确认 --data case/notes/需求信息.json --markdown
+node scripts/write_stage_report.js --case-dir case --stage 请求样本与可疑参数确认 --input case/tmp/可疑参数草稿.md --markdown
+node scripts/check_stage_reports.js --case-dir case --require-stage 需求信息确认 --markdown
+```
+
+用于多轮高难度 case 的阶段性沉淀。阶段报告默认写入 `case/阶段报告/`，文件名必须包含中文，例如 `01-需求信息确认.md`、`03-请求样本与可疑参数确认.md`。信息不完整时也要生成 `01-需求信息确认.md`，记录已提供信息、缺失项和下一步需要用户确认的问题。
+
+
+
+
+### 检查最终一体化产物
+
+
+
+```bash
+
+node scripts/check_final_artifact.js --case-dir case --markdown
+
+node scripts/check_final_artifact.js --case-dir case --file case/result/final.js --json
+
+```
+
+
+
+用于交付前检查：最终项目是否只有一个执行入口、是否不包含 ruyiPage / Playwright / Puppeteer / Selenium / CloakBrowser 等自动化代码、是否由 Node.js / Python 请求客户端发起最终请求、是否混入临时文件或测试文件、是否已默认生成 UTF-8 中文命名最终总结 `result/最终项目总结.md`。若用户明确要求不生成最终总结，检查时才可传入 `--no-require-final-summary`。
+
+
+
+### 清理临时 case 目录
+
+
+
+```bash
+
+node scripts/clean_case.js --case-dir case --dry-run --markdown
+
+node scripts/clean_case.js --case-dir case --force --markdown
+
+node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
+
+```
+
+
+
+必须先使用 `--dry-run` 查看将要清理的内容。每次测试或阶段完成后应立即执行清理；最终回复前再次 dry-run 复查。除非用户明确确认，否则不要使用 `--include-profiles` 删除包含登录态的 Profile。
+
+
+
+## 信息完整后的确认模板
+
+
+
+```markdown
+
+我已整理出本次 Web JS Node.js 补环境前置任务信息，请确认是否正确：
+
+
+
+- 目标网站 URL：
+
+- 目标页面：
+
+- 目标 API：
+
+- 请求方法：
+
+- 请求样本中发现的可疑加密参数：
+
+- 本次确认要分析的加密参数：
+
+- 参数位置：Query / Header / Body / Cookie
+
+- 已提供请求样本：是 / 否
+
+- 已提供响应样本：是 / 否
+
+- 已知 JS 文件：
+
+- 是否需要登录：
+
+- 取证模式：ruyiPage + RuyiTrace / 仅 ruyiPage / Camoufox + camoufox-reverse-mcp / 仅 Camoufox / CloakBrowser / 用户手动取证 / AI 自行决定
+
+- 取证一致性：后续抓包、JS 收集、Hook、断点、截图、日志采集均使用上述模式；如需切换将再次请求确认
+
+- RuyiTrace 状态：已安装 / 未检测到 / 待安装 / 用户明确降级为仅 ruyiPage
+
+- Cookie 过期处理：登录态需用户手动登录或授权样本；非登录 Cookie 将分析生成 / 刷新链路，不默认索要新 Cookie
+
+- 最终请求 TLS 指纹兼容客户端：Node.js CycleTLS / Node.js impers / Node.js curl-cffi / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
+
+- 补环境真实性保护：默认启用 toString / 属性描述符 / 原型链 / 访问器 / 实例对象保护，默认 addon-first；如需关闭必须明确说明
+
+- 通用代码变更记忆：复杂 case 默认维护 `case/notes/代码变更记忆.md`；修改关键源码前读取，修改后记录失败尝试、禁止回退、验证范围和遗留风险
+
+- 阶段报告：默认从 `case/阶段报告/01-需求信息确认.md` 开始按阶段生成中文命名 Markdown；如不需要生成必须明确说明
+
+- 最终总结：默认生成 `result/最终项目总结.md`；如不需要生成必须明确说明
+
+
+
+确认后我将按以下流程执行：
+
+1. 校验请求样本完整性。
+
+2. 解析请求样本，列出所有可疑加密参数，并由用户确认本次需要分析哪些参数。
+
+3. 确认用户选定的目标加密参数是否存在于请求中。
+
+4. 检测用户选择的 TLS 指纹兼容客户端是否已安装；未安装时先让用户确认安装、改选其他客户端或选择不发真实请求。
+
+5. 如涉及 Cookie/token 无效或过期，先区分登录态与非登录生成型 Cookie；非登录 Cookie 将定位生成链路并纳入补环境。
+
+6. 初步判断参数变化和依赖。
+
+7. 定位请求发起位置与加密入口。
+
+8. 输出 source / entry / builder / writer 四层链路。
+
+9. 收集相关 JS 文件。
+
+10. 检查 JS 文件是否可正常获取。
+
+11. 如用户选择 RuyiTrace，先导入 NDJSON 日志、输出环境访问摘要，并把相关 `api` / `stack.file` / `line` / `col` 作为后续补环境优先依据。
+
+12. 执行 Node 泄露阻断、六项纯计算预检，并在进入补环境阶段第一步加载 / 记录 addon；创建 / 读取 `case/notes/代码变更记忆.md`，按 addon-first、真实性保护基线、通用代码变更记忆和代码可读性规范初始化 env。
+
+13. 输出补环境前置分析结论。
+
+
+
+请确认以上信息是否正确。确认后我再继续。
+
+```
+
+
+
+## 前置阶段应输出的内容
+
+
+
+- 请求样本检查结果。
+
+- 请求样本中发现的全部可疑加密参数列表。
+
+- 用户确认要分析的加密参数列表。
+
+- 加密参数画像。
+
+- 加密入口定位记录。
+
+- JS 文件收集结果。
+
+- 缺失信息或阻塞点。
+
+- 已确认取证模式与工具可用性。
+
+- 已确认最终请求 TLS 指纹兼容客户端与可用性。
+
+- 如果选择 ruyiPage + RuyiTrace：RuyiTrace NDJSON 导入状态、摘要位置和优先环境依赖结论。
+
+- Cookie 过期分类与生成 / 刷新链路判断（若涉及）。
+
+- 临时文件清理检查表。
+
+- 通用代码变更记忆文件初始化状态：`case/notes/代码变更记忆.md` 是否已创建，以及是否存在历史禁止回退项。
+
+- 进入 Node.js 补环境阶段前的用户确认。
+
+- 阶段报告写入状态：至少 `case/阶段报告/01-需求信息确认.md`，并按实际进度生成后续中文命名阶段报告。
+
+
+
+## 补环境阶段应输出的内容
+
+
+
+- case 目录与样本文件说明。
+
+- 目标 JS 加载方式与入口函数。
+
+- 探测模式 trace 摘要。
+
+- 如果选择 ruyiPage + RuyiTrace：先给出 NDJSON 证据摘要，再说明 Node trace / Proxy 只是补充验证。
+
+- 缺失环境列表与补齐优先级。
+
+- Proxy 检测风险与迁移到真实对象的计划。
+
+- `toString`、属性描述符、原型链、`document.all` 等真实性处理记录。
+
+- native addon / NativeProtect 使用情况：addon.node 在补环境初始化阶段的检测结果、实际使用 API、NativeProtect fallback、用户豁免或降级原因。
+
+- 通用代码变更记忆记录状态：本轮修改涉及文件、修改理由、已失败尝试、禁止回退、验证命令、验证范围和遗留风险。
+
+- Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹终端 API 的真实浏览器采样值、回放匹配规则和缺失样本处理记录。
+
+- fixtures 对比结果。
+
+- 非登录 Cookie 生成 / 刷新逻辑是否已纳入最终入口的记录（若涉及）。
+
+- 临时 trace / 日志清理结果。
+
+- 最终规范项目目录：入口 `result/final.js` 或 `result/final.py`，必要模块位于 `result/src/` 等目录，并默认包含 `result/最终项目总结.md`。
+
+- 最终项目检查结果：只有一个执行入口、无多余测试/临时文件、无浏览器自动化代码、补环境代码简洁可读且中文注释 UTF-8 正常、指纹值由 Node.js 终端 API 回放实现、最终请求由已确认的 Node.js / Python TLS 指纹兼容客户端实现，或用户明确选择不发真实请求；最终项目未硬编码或复用 cURL / fixture 中的加密参数样本值，而是通过补环境后的目标 JS 入口 / signer 生成；最终总结已生成且 UTF-8 中文正常，除非用户明确要求不生成。
+
+
+
