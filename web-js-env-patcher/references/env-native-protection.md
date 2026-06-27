@@ -87,6 +87,17 @@ node scripts/check_fingerprint_fixture.js --case-dir case --require canvas,webgl
 2. JS 层真实对象 + 描述符 + 原型链。
 3. `NativeProtect` 作为 addon 不可用时的 fallback；必须同时覆盖普通函数、访问器 getter / setter 和实例对象 `Object.prototype.toString`。
 4. 现有能力无法覆盖时，再考虑新增 C++ addon API。
+## native 能力缺口闭环
+
+如果目标行为经过真实浏览器采样后确认：纯 JS fallback 无法可靠表达，当前 addon.node API 也无法覆盖，用户选择 isolated-vm 时当前 `window.xbs` / `xbs.dom` API 也无法覆盖，则不要继续硬凑补环境代码。必须读取 `references/native-capability-gap.md`，并按以下方式处理：
+
+1. 先排除实现不完整和已有 API 用法错误。比如没有使用 `createProtoChains`、`createNativeFunction`、`createGetter`、`createSetter`、`createNativeCollection`、`createUndetectable`、`createInterceptor` 或 `xbs.dom.createDocument()` 时，先改为 native-first，不得直接判定为能力缺口。
+2. 确认为能力缺口后，写入 `case/notes/native-capability-gap.md`，记录阻塞点、真实浏览器基线、纯 JS / addon / xbs 当前结果、无法解决原因、建议新增 native API、最小行为测试用例和通过标准。
+3. 测试用例必须覆盖导致阻塞的关键行为，例如 `typeof`、`Boolean`、`== null`、descriptor、prototype、`Object.prototype.toString`、`instanceof`、DataCloneError 或 Error stack 等，不得只覆盖当前报错消失。
+4. 用户更新 addon.node 或 xbs isolated-vm 后，先运行能力缺口测试用例。测试通过后才能把该点标记为已解决；测试不通过时继续阻塞。
+5. 用户选择临时 JS workaround 时，只能写成“仅当前样本路径临时兼容”，不得写成稳定浏览器行为。用户拒绝扩展 native 能力且目标参数生成必须依赖该行为时，标记 case 阻塞。
+
+典型场景包括 HTMLDDA / `document.all`、内部槽 brand check、跨 Realm 对象一致性、不可检测对象、structuredClone / postMessage DataCloneError、Error stack 与其他必须依赖 V8 / 浏览器引擎能力的行为。
 
 ## addon-first 门禁
 

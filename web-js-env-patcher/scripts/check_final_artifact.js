@@ -36,7 +36,7 @@ function usage() {
   node scripts/check_final_artifact.js --case-dir case --no-require-final-summary --markdown
   node scripts/check_final_artifact.js --case-dir case --file case/result/final.js --json
 
-说明：检查最终交付项目是否是规范目录、只有一个执行入口、无浏览器自动化代码，并确认入口链路最终由已确认的 TLS 指纹兼容 Node.js / Python 请求客户端发起少量模拟请求，或明确不发真实请求；同时检查是否硬编码 / 复用了 cURL 或 fixture 中的样本加密参数值。最终总结 result/最终项目总结.md 是默认硬性要求，且必须包含按类别分组的环境与指纹 API 调用回放明细和高强度环境检测覆盖矩阵；只有用户明确要求不生成最终总结时，才允许传入 --no-require-final-summary 并在阶段输出中记录原因。`;
+说明：检查最终交付项目是否是规范目录、只有一个执行入口、无浏览器自动化代码，并确认入口链路最终由已确认的 TLS 指纹兼容 Node.js / Python Session 请求客户端发起少量模拟请求，或明确不发真实请求；同时检查是否硬编码 / 复用了 cURL 或 fixture 中的样本加密参数值。最终总结 result/最终项目总结.md 是默认硬性要求，且必须包含按类别分组的环境与指纹 API 调用回放明细和高强度环境检测覆盖矩阵；只有用户明确要求不生成最终总结时，才允许传入 --no-require-final-summary 并在阶段输出中记录原因。`;
 }
 
 function exists(p) {
@@ -108,11 +108,29 @@ const JS_REQUEST_PATTERNS = [
   /\bimpers\b/i,
   /\bimpersFetch\b/i,
   /\bcurl-cffi\b/i,
+  /\bcurl-cffi-node\b/i,
   /require\s*\(\s*['"]curl-cffi['"]\s*\)/,
   /from\s+['"]curl-cffi['"]/,
   /\bCurlSession\b/,
   /\bCurlRequest\b/,
   /\breq\.request\s*\(/,
+];
+
+const REQUEST_SESSION_PATTERNS = [
+  /\bcreateRequestSession\s*\(/i,
+  /\bcreate_request_session\s*\(/i,
+  /\bSession\s*\(/,
+  /\brequests\.Session\s*\(/,
+  /\bCurlSession\b/,
+  /\bCookieJar\b/i,
+  /\btough-cookie\b/i,
+  /\bcookieJar\b/,
+  /\bsession\.request\s*\(/i,
+  /\bsession\.close\s*\(/i,
+  /\bjar\.setCookie/i,
+  /Set-Cookie/i,
+  /销毁\s*session/i,
+  /清理\s*Cookie\s*jar/i,
 ];
 
 const PY_REQUEST_PATTERNS = [
@@ -360,6 +378,8 @@ const FINAL_SUMMARY_REQUIRED_SECTIONS = [
   /加密参数生成与样本复用检查/,
   /代码质量与中文注释/,
   /最终交付结构/,
+  /指纹基线一致性/,
+  /Session\s*请求链|Session 模式|TLS 请求验证与 Session 请求链/i,
   /测试结果/,
   /清理结果/,
 ];
@@ -400,7 +420,7 @@ function inspectFinalSummary(resultDir, requireFinalSummary) {
     if (!pattern.test(text)) result.missingSections.push(pattern.toString());
   }
   if (result.missingSections.length) {
-    problems.push(`最终总结缺少必要章节：${result.missingSections.join('、')}。项目完成后的总结必须包含 native addon / NativeProtect 使用情况、环境与指纹 API 调用回放明细、高强度环境检测覆盖矩阵、加密参数生成与样本复用检查、代码质量与中文注释、最终交付结构、测试结果和清理结果。`);
+    problems.push(`最终总结缺少必要章节：${result.missingSections.join('、')}。项目完成后的总结必须包含 native addon / NativeProtect 使用情况、指纹基线一致性、环境与指纹 API 调用回放明细、高强度环境检测覆盖矩阵、最终请求 Session 请求链、加密参数生成与样本复用检查、代码质量与中文注释、最终交付结构、测试结果和清理结果。`);
   }
   if (!/^#\s+/.test(text.trim())) warnings.push('最终总结建议以一级标题开头。');
   return { result, problems, warnings };
@@ -460,8 +480,17 @@ function check(args) {
       const noRealHits = findMatches(text, NO_REAL_REQUEST_PATTERNS);
       if (noRealHits.length) noRealRequestHits.push({ file: rel(caseDir, f), hits: noRealHits });
     }
+    const sessionHits = [];
+    for (const f of requestSearchFiles) {
+      const text = readText(f);
+      const hits = findMatches(text, REQUEST_SESSION_PATTERNS);
+      if (hits.length) sessionHits.push({ file: rel(caseDir, f), hits });
+    }
     if (!requestHits.length && !noRealRequestHits.length) {
-      problems.push('未检测到已确认的 TLS 指纹兼容请求客户端（Node.js CycleTLS / impers，或 Python curl_cffi / cffi_curl / cyCronet）；最终验证不能依赖普通 fetch/requests 或浏览器自动化。如用户不发真实请求，入口必须明确只输出本地 sign / 参数。');
+      problems.push('未检测到已确认的 TLS 指纹兼容请求客户端（Node.js CycleTLS / impers / curl-cffi-node，或 Python curl_cffi / cffi_curl / cyCronet）；最终验证不能依赖普通 fetch/requests 或浏览器自动化。如用户不发真实请求，入口必须明确只输出本地 sign / 参数。');
+    }
+    if (requestHits.length && !noRealRequestHits.length && !sessionHits.length) {
+      problems.push('最终请求必须使用 Session 模式：即使只有一个请求，也要创建 session client，复用 Cookie jar / Header / UA / Client Hints / TLS 指纹，并在成功或失败后销毁 session。未检测到 createRequestSession / requests.Session / CookieJar / session.close 等证据。');
     }
   }
 
@@ -539,6 +568,7 @@ function renderMarkdown(result) {
     `- 是否只有一个执行入口：${result.problems.some(p => p.includes('执行入口')) ? '否' : '是'}`,
     `- 是否不含浏览器自动化代码：${result.problems.some(p => p.includes('自动化')) ? '否' : '是'}`,
     `- 是否检测到 TLS 指纹兼容请求客户端或明确不发真实请求：${result.problems.some(p => p.includes('TLS 指纹兼容请求客户端')) ? '否' : '是'}`,
+    `- 是否使用 Session 模式并具备销毁逻辑：${result.problems.some(p => p.includes('Session 模式')) ? '否' : '是'}`,
     `- 是否不含指纹采样 Hook / Node.js 渲染库：${result.problems.some(p => p.includes('指纹采样 Hook') || p.includes('渲染库')) ? '否' : '是'}`,
     `- 是否未复用 cURL / fixture 中的加密参数样本值：${result.reusedCryptoCheck.reused.length || result.reusedCryptoCheck.hardcoded.length ? '否' : '是'}`,
     `- 是否已生成中文命名最终总结且包含 API 调用回放明细和高强度检测矩阵：${result.finalSummary.required ? (result.finalSummary.present && !result.finalSummary.mojibakeSuspected && !result.finalSummary.missingSections.length ? '是' : '否') : (result.finalSummaryOptOut ? '用户明确豁免' : '未强制检查')}`,

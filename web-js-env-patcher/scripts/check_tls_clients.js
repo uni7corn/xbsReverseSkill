@@ -22,7 +22,7 @@ function usage() {
   node scripts/check_tls_clients.js --markdown
   node scripts/check_tls_clients.js --python python --json
 
-说明：检测最终请求阶段可选的 TLS 指纹兼容客户端：Node.js CycleTLS / impers、Python curl_cffi / cffi_curl / cyCronet。`;
+说明：检测最终请求阶段可选的 TLS 指纹兼容客户端：Node.js CycleTLS / impers / curl-cffi-node、Python curl_cffi / cffi_curl / cyCronet；真实请求交付时必须再封装为 Session 模式。`;
 }
 
 function run(cmd, args, timeout = 12000) {
@@ -108,7 +108,7 @@ function detectPythonModules(explicitPython) {
 }
 
 function detect(args) {
-  const nodePackages = ['cycletls', '@luminati-io/cycletls', 'cycle-tls', 'cycleTls', 'impers', 'curl-cffi'].map(nodeRequire);
+  const nodePackages = ['cycletls', '@luminati-io/cycletls', 'cycle-tls', 'cycleTls', 'impers', 'curl-cffi', 'curl-cffi-node'].map(nodeRequire);
   const python = detectPythonModules(args.python);
   const cycleTlsAvailable = nodePackages.some(p => p.installed && /cycle/i.test(p.name));
   const impersAvailable = nodePackages.some(p => p.installed && p.name === 'impers');
@@ -124,7 +124,7 @@ function detect(args) {
     },
     python,
     pythonTlsAvailable: Object.values(python.modules).some(v => v && v.installed),
-    note: '这些客户端只用于授权范围内的最终低频请求验证；如果本 case 需要最终发送真实请求，应在前置阶段先选择 Node.js CycleTLS/impers 或 Python curl_cffi/cyCronet，不要等普通客户端失败后才考虑。',
+    note: '这些客户端只用于授权范围内的最终低频请求验证；如果本 case 需要最终发送真实请求，应在前置阶段先选择 Node.js CycleTLS/impers/curl-cffi-node 或 Python curl_cffi/cyCronet，并在最终项目中封装为 Session 模式，不要等普通客户端失败后才考虑。',
   };
 }
 
@@ -147,7 +147,7 @@ function renderMarkdown(result) {
   if (!result.node.nodeTlsAvailable && !result.pythonTlsAvailable) {
     lines.push('- 未检测到可用 TLS 指纹兼容客户端；如果本 case 需要最终发送真实请求，需在前置阶段询问用户安装 CycleTLS / impers / curl_cffi / cyCronet，或改为只输出本地 sign 结果。');
   } else {
-    lines.push('- 在任务确认阶段选择一个最终请求客户端，并限制为少量授权验证请求；最终项目中只保留所选客户端的请求逻辑。');
+    lines.push('- 在任务确认阶段选择一个最终请求客户端，并限制为少量授权验证请求；最终项目中只保留所选客户端的 Session 请求逻辑。');
   }
   return lines.join('\n') + '\n';
 }

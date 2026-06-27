@@ -54,7 +54,7 @@
 
    ```text
 
-   安装/加载补环境 → 调用目标 JS 入口生成加密参数 → 组装请求 → 用 Node.js / Python 客户端发送模拟请求 → 输出验证结果
+   安装/加载补环境 → 调用目标 JS 入口生成加密参数 → 组装请求 → 用 Node.js / Python TLS 指纹兼容 Session 客户端发送模拟请求 → 输出验证结果 → 销毁 session
 
    ```
 
@@ -122,7 +122,7 @@
 
 
 
-6. **最终请求必须由前置阶段已确认的 Node.js 或 Python 客户端完成**  
+6. **最终请求必须由前置阶段已确认的 Node.js 或 Python Session 客户端完成**  
 
    最终验证流程必须是：
 
@@ -130,13 +130,13 @@
 
    ```text
 
-   生成加密参数 → 用已确认的 TLS 指纹兼容客户端组装请求 → 发起少量授权验证请求
+   创建 session → 生成加密参数 → 用已确认的 TLS 指纹兼容客户端在同一 session 中组装请求 → 发起少量授权验证请求 → 销毁 session
 
    ```
 
 
 
-   可选客户端为 Node.js CycleTLS / impers，或 Python curl_cffi / cffi_curl / cyCronet；如果用户选择“不发真实请求”，入口只输出本地 sign / 参数和组装后的脱敏请求信息。
+   可选客户端为 Node.js CycleTLS / impers / curl-cffi-node，或 Python curl_cffi / cffi_curl / cyCronet；如果用户选择“不发真实请求”，入口只输出本地 sign / 参数和组装后的脱敏请求信息。即使只有一个目标 API，也必须使用 Session 模式，动态资源刷新、Cookie / challenge 生成链路和目标 API 复用同一 Cookie jar / Header / UA / Client Hints / TLS 指纹 / fingerprint baseline。
 
 
 
@@ -168,7 +168,7 @@
 
 
 
-   总结必须读取 `references/final-project-summary.md` 的模板要求，使用 `scripts/write_markdown_utf8.js` 以 UTF-8 写入，并包含 native addon / NativeProtect 使用情况、加密参数生成与样本复用检查、最终交付结构、测试结果和清理结果。只有用户明确要求“不生成最终总结”时才可跳过；跳过时要在阶段输出中记录原因，并在 `check_final_artifact.js` 中显式使用 `--no-require-final-summary`。
+   总结必须读取 `references/final-project-summary.md` 的模板要求，使用 `scripts/write_markdown_utf8.js` 以 UTF-8 写入，并包含 native addon / NativeProtect 使用情况、指纹基线一致性、最终请求 Session 请求链、加密参数生成与样本复用检查、最终交付结构、测试结果和清理结果。只有用户明确要求“不生成最终总结”时才可跳过；跳过时要在阶段输出中记录原因，并在 `check_final_artifact.js` 中显式使用 `--no-require-final-summary`。
 
 
 
@@ -178,7 +178,7 @@
 
 9. **动态 HTML / JS 必须运行时刷新**
 
-   如果 `case/notes/resource-manifest.json` 中存在 `dynamic: true` 且 `requiredForFinal: true` 的资源，最终项目必须包含运行时刷新模块，例如 `src/resources/fetch-runtime-resources.js`。`final.js` / `final.py` 执行顺序必须是：刷新当前 HTML / JS / challenge / seed → 更新 Cookie / Storage / runtime context → 加载当前资源运行 signer → 使用已确认 TLS 指纹兼容客户端发送最终请求。
+   如果 `case/notes/resource-manifest.json` 中存在 `dynamic: true` 且 `requiredForFinal: true` 的资源，最终项目必须包含运行时刷新模块，例如 `src/resources/fetch-runtime-resources.js`。`final.js` / `final.py` 执行顺序必须是：创建请求 session → 刷新当前 HTML / JS / challenge / seed → 更新同一 session 的 Cookie / Storage / runtime context → 加载当前资源运行 signer → 使用已确认 TLS 指纹兼容客户端在同一 session 发送最终请求 → 销毁 session。
 
    不得把 `case/js/snapshots/`、403 / challenge 页面、动态 HTML、动态 chunk 或旧 seed 固定复制到 `result/` 作为 signer 主路径；这些快照只能用于分析、fixture 对比和历史证据。交付前必须运行：
 
@@ -338,7 +338,7 @@ try {
 
 const { makeEncryptedParams } = require('./src/target/entry');
 
-const { sendRequest } = require('./src/request/client');
+const { createRequestSession } = require('./src/request/client');
 
 
 
@@ -365,21 +365,27 @@ const CONFIG = {
 
 async function main() {
 
-  // 如果存在动态 HTML / JS / challenge，先刷新当前有效资源，旧快照不能作为最终主输入
-  const runtimeResources = typeof fetchRuntimeResources === 'function'
-    ? await fetchRuntimeResources(CONFIG)
-    : null;
+  const session = await createRequestSession(CONFIG);
+  try {
+    // 如果存在动态 HTML / JS / challenge，必须在同一 session 中刷新当前有效资源，旧快照不能作为最终主输入。
+    const runtimeResources = typeof fetchRuntimeResources === 'function'
+      ? await fetchRuntimeResources(CONFIG, session)
+      : null;
 
-  // 加密参数必须由补环境后的目标入口动态生成，不复用 cURL 样本值
-  const params = await makeEncryptedParams({ request: CONFIG, runtimeResources });
+    // 加密参数必须由补环境后的目标入口动态生成，不复用 cURL 样本值。
+    const params = await makeEncryptedParams({ request: CONFIG, runtimeResources, session });
 
-  const response = await sendRequest(CONFIG, params);
+    const response = await session.request({ config: CONFIG, params });
 
-  const ok = response.status >= 200 && response.status < 300;
+    const ok = response.status >= 200 && response.status < 300;
 
-  console.log(JSON.stringify({ ok, params, response }, null, 2));
+    console.log(JSON.stringify({ ok, params, response }, null, 2));
 
-  if (!ok) process.exitCode = 2;
+    if (!ok) process.exitCode = 2;
+  } finally {
+    // 中文说明：无论请求成功还是失败，都销毁 session，清理 Cookie jar 和敏感运行态。
+    await session.close();
+  }
 
 }
 
@@ -401,7 +407,7 @@ if (require.main === module) {
 
 
 
-`src/request/client.js` 应使用前置阶段已确认的 Node.js CycleTLS / impers，或在用户明确选择“不发真实请求”时只输出本地参数和脱敏请求；不要临时退回普通 `fetch` / `https.request` 发真实请求，也不要调用任何浏览器自动化。
+`src/request/client.js` 应使用前置阶段已确认的 Node.js CycleTLS / impers / curl-cffi-node 创建 Session 客户端，导出 `createRequestSession()`，并维护 Cookie jar、Header 状态和 `close()`；或在用户明确选择“不发真实请求”时只输出本地参数和脱敏请求。不要临时退回普通 `fetch` / `https.request` 发真实请求，也不要调用任何浏览器自动化。
 
 
 
@@ -414,7 +420,7 @@ if (require.main === module) {
 # 唯一入口：生成加密参数并使用已确认的请求客户端验证结果
 from src.signer import make_encrypted_params
 
-from src.request_client import send_request
+from src.request_client import create_request_session, close_request_session
 
 
 
@@ -441,18 +447,25 @@ CONFIG = {
 
 def main():
 
-    # 加密参数必须由补环境后的目标入口动态生成，不复用 cURL 样本值
-    params = make_encrypted_params({"request": CONFIG})
+    session = create_request_session(CONFIG)
+    try:
 
-    response = send_request(CONFIG, params)
+        # 加密参数必须由补环境后的目标入口动态生成，不复用 cURL 样本值
+        params = make_encrypted_params({"request": CONFIG, "session": session})
 
-    ok = 200 <= response["status"] < 300
+        response = session.request(CONFIG, params)
 
-    print({"ok": ok, "params": params, "response": response})
+        ok = 200 <= response["status"] < 300
 
-    if not ok:
+        print({"ok": ok, "params": params, "response": response})
 
-        raise SystemExit(2)
+        if not ok:
+
+            raise SystemExit(2)
+    finally:
+
+        # 中文说明：请求结束后销毁 Session，清理 Cookie jar 和敏感运行态。
+        close_request_session(session)
 
 
 
@@ -476,7 +489,7 @@ if __name__ == "__main__":
 
 - [ ] 只有一个执行入口：`final.js` 或 `final.py`。
 
-- [ ] 执行入口可直接运行，并会生成加密参数、发送模拟请求、输出请求结果。
+- [ ] 执行入口可直接运行，并会生成加密参数、使用 Session 发送模拟请求、输出请求结果并销毁 session。
 
 - [ ] 模块拆分合理，必要源码位于 `src/`。
 - [ ] 补环境代码已运行 `check_code_quality.js`，中文注释 UTF-8 正常、无问号、无连续问号、无乱码。
@@ -485,7 +498,7 @@ if __name__ == "__main__":
 
 - [ ] 如涉及 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何指纹，最终项目使用真实浏览器采样 fixture + 终端 API 值回放，不依赖 node-canvas / headless-gl / 自动化浏览器。
 
-- [ ] 最终请求由前置阶段已确认的 Node.js / Python TLS 指纹兼容客户端发起，或用户明确选择不发真实请求；不通过浏览器自动化验证。
+- [ ] 最终请求由前置阶段已确认的 Node.js / Python TLS 指纹兼容 Session 客户端发起，或用户明确选择不发真实请求；同一请求链复用 session，结束后销毁，不通过浏览器自动化验证。
 
 - [ ] fixtures 已通过；动态参数建议三组以上。
 
@@ -517,9 +530,9 @@ if __name__ == "__main__":
 
 - 运行方式：
 
-- 入口能力：生成加密参数 + 发送 Node.js / Python 模拟请求 + 输出请求结果
+- 入口能力：生成加密参数 + 使用 Node.js / Python Session 模拟请求 + 输出请求结果 + 销毁 session
 
-- 请求实现：Node.js CycleTLS / Node.js impers / Node.js curl-cffi / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
+- 请求实现：Node.js CycleTLS / Node.js impers / Node.js curl-cffi / curl-cffi-node / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
 
 - 是否包含浏览器自动化代码：否
 
@@ -527,7 +540,9 @@ if __name__ == "__main__":
 
 - fixtures 验证：通过 / 未执行，原因
 
-- 动态资源保鲜检查：无动态资源 / 已运行时刷新 / 未通过，原因
+- 动态资源保鲜检查：无动态资源 / 已在同一 session 运行时刷新 / 未通过，原因
+
+- Session 模式：已创建并复用 / 不发真实请求；销毁方式：close / exit / dispose / Cookie jar 清理
 
 - resource manifest：`case/notes/resource-manifest.json` / 未涉及
 

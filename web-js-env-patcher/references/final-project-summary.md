@@ -36,13 +36,13 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-- 必须保留“阶段报告索引”“native addon / NativeProtect 使用情况”“环境与指纹 API 调用回放明细”“高强度环境检测覆盖矩阵”章节。
-- 必须保留“动态资源保鲜与运行时刷新”“补环境框架选择与 Trace 复杂度评估”“加密参数生成与样本复用检查”“代码质量与中文注释”“最终交付结构”“测试结果”“清理结果”章节。
+- 必须保留“阶段报告索引”“native addon / NativeProtect 使用情况”“指纹基线一致性”“环境与指纹 API 调用回放明细”“高强度环境检测覆盖矩阵”章节。
+- 必须保留“动态资源保鲜与运行时刷新”“补环境框架选择与 Trace 复杂度评估”“最终请求 Session 请求链”“加密参数生成与样本复用检查”“代码质量与中文注释”“最终交付结构”“测试结果”“清理结果”章节。
 - 必须写入 `case/result/最终项目总结.md`；除非用户明确要求不生成，否则 `check_final_artifact.js` 会默认检查该中文命名文件。
 
 - 只有用户选择 ruyiPage + RuyiTrace、或用户提供 RuyiTrace NDJSON 日志时，才保留 RuyiTrace 章节；否则删除整章。
 
-- 如果用户选择“不发真实请求，只输出本地参数”，TLS 请求验证章节需写明该选择和原因。
+- 如果用户选择“不发真实请求，只输出本地参数”，TLS 请求验证和 Session 请求链章节需写明该选择和原因。
 
 - 不要把临时 hook、trace、HAR、浏览器 Profile、截图路径写成最终交付物。
 
@@ -90,7 +90,9 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - 取证模式：ruyiPage + RuyiTrace / 仅 ruyiPage / Camoufox + camoufox-reverse-mcp / 仅 Camoufox / CloakBrowser / 用户手动取证 / AI 自行决定
 
-- 最终请求 TLS 指纹兼容客户端：Node.js CycleTLS / Node.js impers / Node.js curl-cffi / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
+- 最终请求 TLS 指纹兼容客户端：Node.js CycleTLS / Node.js impers / Node.js curl-cffi / curl-cffi-node / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
+
+- 最终请求 Session 模式：启用 / 不发真实请求
 
 - 补环境框架选择：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm） / Node.js 内置 vm / jsEnv
 
@@ -322,8 +324,48 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 - 阶段输出或 notes 中的补环境初始化加载记录、用户豁免或降级记录：
 
 
+## 12.1 native 能力缺口闭环
 
-## 13. 环境与指纹 API 调用回放明细
+
+
+- 是否发生 native 能力缺口：未发生 / 已发生
+
+- 阻塞 API / 行为：
+
+- 触发位置与证据：RuyiTrace / Hook / Node trace / 目标源码位置 / fixture
+
+- 真实浏览器基线摘要：
+
+- 纯 JS fallback 当前结果与差异：
+
+- addon.node 当前结果与差异：
+
+- xbs isolated-vm 当前结果与差异：未选择 isolated-vm / 已测试 / 不适用
+
+- 建议新增或增强 native API：
+
+- 最小行为测试用例位置：`case/notes/native-capability-gap-test.js` / `case/native-capability-gap/<name>.js` / 不适用
+
+- 测试通过状态：已通过 / 未通过 / 等待用户更新 native 能力 / 用户接受临时 workaround / case 阻塞
+
+- 用户选择与原因：扩展 addon.node / 扩展 xbs isolated-vm / 临时 workaround / 暂停 case / 其他
+
+- 临时 workaround 风险说明：仅当前样本路径临时兼容 / 不涉及
+
+
+
+## 13. 指纹基线一致性
+
+- baseline 文件：`case/notes/fingerprint-baseline.json` / 未生成，原因：
+- baselineId：
+- 取证工具与 profile / seed：
+- 是否复用同一 profile / seed / 代理 / 语言 / 时区 / UA / Client Hints / screen / WebGL：是 / 否
+- 是否发生 baseline diff：否 / 是，diff 文件：`case/notes/fingerprint-baseline-diff.md`
+- 冲突字段与处理方式：
+- `fingerprint.fixture.json` 是否绑定同一 baselineId：是 / 否 / 不涉及
+- 未涉及指纹采样时说明：未涉及 / 仅记录取证基线
+
+## 14. 环境与指纹 API 调用回放明细
 
 
 
@@ -357,7 +399,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-### 13.1 分类汇总
+### 14.1 分类汇总
 
 
 
@@ -383,7 +425,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-### 13.2 分类明细
+### 14.2 分类明细
 
 
 
@@ -449,7 +491,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 14. 高强度环境检测覆盖矩阵
+## 15. 高强度环境检测覆盖矩阵
 
 
 
@@ -485,7 +527,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 15. 指纹值回放
+## 16. 指纹值回放
 
 
 
@@ -503,14 +545,14 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 16. 加密参数生成与样本复用检查
+## 17. 加密参数生成与样本复用检查
 
 - cURL / HAR / fixture 中的样本加密值是否只作为 expected：
 - 最终入口如何生成参数：目标 JS 入口 / signer / 其他
 - 是否发现硬编码样本值：否
 - `check_final_artifact.js` 复用检查结果：
 
-## 17. 代码质量与中文注释
+## 18. 代码质量与中文注释
 
 - 是否已运行 `check_code_quality.js`：
 - 模块拆分情况：
@@ -522,13 +564,25 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 - 中文注释是否包含问号、连续问号或乱码：否
 - 修复过的可读性问题：
 
-## 18. TLS 请求验证
+## 19. TLS 请求验证与 Session 请求链
 
 
 
 - 是否发送真实请求：是 / 否
 
-- 客户端：Node.js CycleTLS / Node.js impers / Node.js curl-cffi / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
+- 客户端：Node.js CycleTLS / Node.js impers / Node.js curl-cffi / curl-cffi-node / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
+
+- Session 模式：已启用 / 不发真实请求
+
+- Session client 文件：`result/src/request/client.js` / `result/src/request_client.py` / 不适用
+
+- 请求链是否共用同一 session：是 / 否；包含：动态资源刷新 / Cookie 生成 / challenge / 目标 API
+
+- Cookie jar 来源与更新点：
+
+- 是否复用同一 UA / Client Hints / Accept-Language / Referer / Origin / proxy / fingerprint baseline：
+
+- Session 销毁方式：close / exit / dispose / Cookie jar 清理 / 不适用
 
 - TLS / JA3 / HTTP2 / Header 顺序策略：
 
@@ -542,7 +596,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 19. 最终交付结构
+## 20. 最终交付结构
 
 
 
@@ -560,11 +614,11 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - isolated-vm 是否包含大段 `String.raw` / `*_SCRIPT` 补环境源码：否 / 不适用
 
-- 最终请求实现：Node.js / Python TLS 指纹兼容客户端 / 不发真实请求
+- 最终请求实现：Node.js / Python TLS 指纹兼容 Session 客户端 / 不发真实请求
 
 
 
-## 20. 测试结果
+## 21. 测试结果
 
 
 
@@ -579,13 +633,17 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - 高强度环境检测覆盖矩阵检查：
 
+- 指纹基线一致性检查：
+
+- Session 请求链检查：
+
 - 最终产物检查：
 
 - 清理 dry-run：
 
 
 
-## 21. 清理结果
+## 22. 清理结果
 
 
 
@@ -599,7 +657,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 22. 风险与后续建议
+## 23. 风险与后续建议
 
 
 

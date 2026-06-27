@@ -221,7 +221,7 @@ node scripts/download_ruyi_tool.js --tool ruyipage-firefox --dest <download-dir>
 | 独立 Profile | 使用本 case 专用临时 `user_dir` / profile，不复用脏 profile |
 | 智能指纹 | 默认调用 `opts.smart_fingerprint(require_country=None, base_dir=..., userdir=...)`；如果地理探测失败，要求安装 `requests` 或提供 `manual_geo`，不要静默跳过 |
 | 仿真注入 | 如果 `smart_fingerprint()` 返回 `ctx`，创建页面后必须执行 `ctx.apply_emulation(page)` |
-| 指纹一致性 | geolocation、timezone、locale、viewport 与 `smart_fingerprint` 输出保持一致；不要随意改成与出口 IP 冲突的国家 / 时区 |
+| 指纹一致性 | 第一次成功取证后写入 `case/notes/fingerprint-baseline.json` 和 `baselineId`；geolocation、timezone、locale、viewport、UA、Client Hints、screen、WebGL 与 `smart_fingerprint` 输出和出口 IP 保持一致；后续复用同一 `base_dir` / `userdir`，不要每次随机新指纹 |
 | 拟人动作 | 设置 `set_human_algorithm("windmouse")` 或 `"bezier"`，优先使用拟人滚动 / 点击触发业务动作 |
 | 取证时机 | `page.capture.start(...)` 必须在 `page.get(...)` 之前执行 |
 | 自检 | 导航后检查 `navigator.webdriver`，期望为 `false`；若为 `true`，判定当前取证不合格 |
@@ -229,6 +229,13 @@ node scripts/download_ruyi_tool.js --tool ruyipage-firefox --dest <download-dir>
 | isTrusted | 点击、拖拽、鼠标、键盘、滚动优先使用原生 BiDi / human actions；确需 JS 构造事件时必须带 `ruyi: true`；普通 `dispatchEvent` 不视为可信输入 |
 
 这些约束只能降低普通自动化 / CDP / 指纹检测风险，不能保证绕过所有业务风控、登录、验证码、MFA、设备验证或服务端策略。
+
+## ruyiPage / RuyiTrace 指纹基线固定
+
+- ruyiPage 第一次成功取证后，把 `smart_fingerprint` 输出、profile / userdir、UA、Client Hints、locale、timezone、viewport、screen、WebGL 等写入 `case/notes/fingerprint-baseline.json`。
+- RuyiTrace 自动捕获或手动采集前先确认使用同一 case profile / baseline；如果 RuyiTrace 定制内核不能复用同一 profile，必须采样核心字段并写入 `case/notes/fingerprint-baseline-diff.md`，不一致时暂停。
+- 后续 Hook、截图、网络抓包、指纹 fixture 采样必须带同一 `baselineId`；缺少 `baselineId` 时不得把样本用于最终 env。
+- 如果用户更换代理、地区、语言、profile 或工具，生成新的 baseline，旧样本不能和新样本混用。
 
 ### ruyiPage isTrusted 交互规则
 
@@ -266,7 +273,9 @@ opts.set_human_algorithm("windmouse")
 
 ctx = opts.smart_fingerprint(
     require_country=None,
+    # 同一 case 固定该目录，避免每次随机生成不同指纹。
     base_dir="<case-tmp-fingerprint-dir>",
+    # 同一 case 固定该 profile，后续 RuyiTrace / Hook / 指纹采样复用同一基线。
     userdir="<case-browser-profile>",
 )
 

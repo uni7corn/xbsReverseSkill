@@ -26,7 +26,7 @@ function usage() {
   node scripts/check_fingerprint_fixture.js --case-dir case --require canvas,webgl --markdown
   node scripts/check_fingerprint_fixture.js --fixture case/fixtures/fingerprint.fixture.json --env-file case/result/src/env/fingerprint-env.js --json
 
-说明：检查浏览器指纹 fixture 是否覆盖 Canvas / WebGL / WebGPU / Audio / DOM 几何等终端 API，并检查最终 env 是否避免 node-canvas / headless-gl / 自动化浏览器等错误方向。`;
+说明：检查浏览器指纹 fixture 是否覆盖 Canvas / WebGL / WebGPU / Audio / DOM 几何等终端 API，是否绑定同一 fingerprint baseline，并检查最终 env 是否避免 node-canvas / headless-gl / 自动化浏览器等错误方向。`;
 }
 
 function exists(p) { try { fs.accessSync(p); return true; } catch { return false; } }
@@ -50,6 +50,10 @@ function walk(p, out = []) {
 
 function countArray(v) { return Array.isArray(v) ? v.length : 0; }
 function hasResultObject(v) { return !!v && typeof v === 'object' && Object.prototype.hasOwnProperty.call(v, 'result'); }
+function pickBaselineId(obj) {
+  if (!obj || typeof obj !== 'object') return '';
+  return String(obj.baselineId || (obj.source && obj.source.baselineId) || '');
+}
 
 function inspectFixture(file) {
   const problems = [];
@@ -95,8 +99,45 @@ function inspectFixture(file) {
   counts.domGetBoundingClientRect = countArray(fp.domGeometry && fp.domGeometry.getBoundingClientRect);
   counts.domOffset = countArray(fp.domGeometry && fp.domGeometry.offset);
 
-  if (!fp.source) warnings.push('指纹 fixture 缺少 source 字段，建议记录取证模式、pageUrl、userAgent、timezone、locale 和采样时间。');
-  return { fixture: fp, counts, problems, warnings };
+  const baselineId = pickBaselineId(fp);
+  if (!baselineId) problems.push('指纹 fixture 缺少 baselineId；必须先创建 case/notes/fingerprint-baseline.json，并让 fixture 绑定同一 baselineId。');
+  if (!fp.source) warnings.push('指纹 fixture 缺少 source 字段，建议记录取证模式、pageUrl、userAgent、timezone、locale、baselineId 和采样时间。');
+  return { fixture: fp, baselineId, counts, problems, warnings };
+}
+
+function inspectBaseline(caseDir, fixtureResult) {
+  const problems = [];
+  const warnings = [];
+  const baselineFile = path.join(caseDir, 'notes', 'fingerprint-baseline.json');
+  const result = { file: baselineFile, present: exists(baselineFile), baselineId: '', conflicts: [] };
+  if (!result.present) {
+    problems.push('缺少指纹基线文件 case/notes/fingerprint-baseline.json；涉及指纹采样时必须先固定同一 case 的 fingerprint baseline。');
+    return { result, problems, warnings };
+  }
+  let baseline;
+  try { baseline = readJson(baselineFile); } catch (err) {
+    problems.push(`指纹基线 JSON 解析失败：${err.message}`);
+    return { result, problems, warnings };
+  }
+  result.baselineId = String(baseline.baselineId || '');
+  if (!result.baselineId) problems.push('fingerprint-baseline.json 缺少 baselineId。');
+  if (fixtureResult.baselineId && result.baselineId && fixtureResult.baselineId !== result.baselineId) {
+    problems.push(`指纹 fixture baselineId 与基线不一致：fixture=${fixtureResult.baselineId}，baseline=${result.baselineId}。不得混用不同随机指纹样本。`);
+  }
+  const fp = fixtureResult.fixture || {};
+  const source = fp.source || {};
+  const checks = [
+    ['userAgent', source.userAgent, baseline.navigator && baseline.navigator.userAgent],
+    ['timezone', source.timezone, baseline.network && baseline.network.timezone],
+    ['locale', source.locale, baseline.network && baseline.network.locale],
+  ];
+  for (const [name, a, b] of checks) {
+    if (a && b && String(a) !== String(b)) result.conflicts.push({ field: name, fixture: String(a), baseline: String(b) });
+  }
+  if (result.conflicts.length) {
+    problems.push(`指纹 fixture 与 baseline 核心字段冲突：${result.conflicts.map(x => `${x.field}: fixture=${x.fixture}, baseline=${x.baseline}`).join('；')}。请重新采样或生成新 baseline。`);
+  }
+  return { result, problems, warnings };
 }
 
 const REQUIRE_RULES = {
@@ -168,6 +209,10 @@ function check(args) {
     if (!ok) problems.push(`要求 ${item} 指纹样本，但 fixture 中未发现对应终端 API 返回值。`);
   }
 
+  const baselineResult = inspectBaseline(caseDir, fixtureResult);
+  problems.push(...baselineResult.problems);
+  warnings.push(...baselineResult.warnings);
+
   const envResult = inspectEnvCode(envFiles, caseDir);
   problems.push(...envResult.problems);
   warnings.push(...envResult.warnings);
@@ -178,6 +223,8 @@ function check(args) {
     envFiles: envFiles.map(p => rel(caseDir, p)),
     required,
     clean: problems.length === 0,
+    baseline: baselineResult.result,
+    fixtureBaselineId: fixtureResult.baselineId || '',
     counts: fixtureResult.counts,
     badImplementationHits: envResult.hits,
     problems,
@@ -192,6 +239,13 @@ function renderMarkdown(result) {
     `case 目录：${result.caseDir}`,
     `fixture：${result.fixtureFile}`,
     `是否通过：${result.clean ? '是' : '否'}`,
+    '',
+    '## 指纹基线',
+    `- baseline 文件：${result.baseline.file}`,
+    `- baseline 是否存在：${result.baseline.present ? '是' : '否'}`,
+    `- baselineId：${result.baseline.baselineId || '未发现'}`,
+    `- fixture baselineId：${result.fixtureBaselineId || '未发现'}`,
+    `- 核心字段冲突：${result.baseline.conflicts.length ? '是' : '否'}`,
     '',
     '## 样本覆盖统计',
   ];

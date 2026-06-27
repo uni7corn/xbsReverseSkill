@@ -48,6 +48,17 @@
 
 详细 ruyiPage / RuyiTrace 流程见 `ruyi-tooling.md`；详细 Camoufox 流程见 `camoufox-tooling.md`；自动点击、拖拽、键盘、滚动和验证码交互的 `isTrusted` 可信输入规则见 `trusted-input-and-isTrusted.md`。
 
+## 指纹基线一致性硬约束
+
+使用 ruyiPage、RuyiTrace、Camoufox、camoufox-reverse-mcp、CloakBrowser 或用户手动浏览器进行取证时，必须把“同一 case 的指纹一致性”作为前置门禁，而不是等发现指纹冲突后再补救。
+
+- 第一次成功打开目标页并完成基础自检后，立即写入 `case/notes/fingerprint-baseline.json`，生成 `baselineId`。
+- 后续抓包、Hook、RuyiTrace、截图、JS 收集、指纹采样和 fixture 对比必须复用同一 profile / userdir / seed / 代理 / locale / timezone / viewport / UA / Client Hints / screen / WebGL 基线。
+- 禁止每次启动工具都重新随机指纹；如果工具默认会随机，必须通过持久 profile、固定 seed、固定配置或复用首次输出值来锁定本 case 基线。
+- ruyiPage 与 RuyiTrace 如果不是同一浏览器或同一 profile，必须先对 baseline 做 diff；Camoufox / CloakBrowser 与其他工具交叉采样也同理。
+- 发现 language、timezone、platform、UA、Client Hints、screen、DPR、WebGL、Canvas、Audio、字体或代理地区不一致时，暂停并写入 `case/notes/fingerprint-baseline-diff.md`；未经用户确认，不得混用样本。
+- 用户明确更换代理、地区、profile 或工具时，生成新的 `baselineId`，旧样本只能保留为历史证据。
+
 ## isTrusted 与原生输入硬约束
 
 当取证阶段需要点击、鼠标移动、拖拽、键盘输入、滚动或验证码交互时，必须先按已确认工具选择可信输入路径：
@@ -106,9 +117,10 @@ ruyiPage 的价值在于使用 Firefox + WebDriver BiDi，并配合其 managed r
 选择 ruyiPage 后，从第一次打开目标页开始就必须使用 ruyiPage 启动硬约束：
 
 - 有头模式，不使用 headless。
-- 专用临时 Profile，不复用脏 profile。
+- 专用临时 Profile，不复用脏 profile；同一 case 后续取证复用该 profile / userdir，不得每次随机新 profile。
 - `opts.smart_fingerprint(...)` 成功，并在创建页面后执行 `ctx.apply_emulation(page)`。
-- geolocation / timezone / locale / viewport 与出口 IP 和智能指纹保持一致。
+- 第一次成功后固化 `case/notes/fingerprint-baseline.json` 与 `baselineId`，后续复用 `base_dir`、`userdir` 和智能指纹输出。
+- geolocation / timezone / locale / viewport 与出口 IP、智能指纹和 fingerprint baseline 保持一致。
 - `page.capture.start(...)` 先于 `page.get(...)`。
 - 导航后验证 `navigator.webdriver === false`。
 - 对跨域接口，不能把单独的 `OPTIONS` preflight 当作业务取证成功。
@@ -177,8 +189,8 @@ node scripts/check_external_tools.js --python python --require-camoufox --requir
 
 - 使用有头模式：`headless=False`。Linux 无显示环境且用户确认时才可使用官方 `headless="virtual"`。
 - 开启拟人鼠标：`humanize=True`。
-- 代理场景必须考虑指纹一致性：用户授权代理时优先 `geoip=True`，必要时 `block_webrtc=True`，并让 locale / timezone / geolocation 与出口 IP 一致。
-- 不要固定窗口尺寸、字体、WebGL 等指纹值，除非有真实样本或目标调试需要；固定值可能造成指纹分布异常。
+- 代理场景必须考虑指纹一致性：用户授权代理时优先 `geoip=True`，必要时 `block_webrtc=True`，并让 locale / timezone / geolocation 与出口 IP 和 fingerprint baseline 一致。
+- 不要每次启动随机窗口尺寸、字体、WebGL 等指纹值；首次成功取证后必须固化真实样本或工具输出，后续复用同一 baseline。
 - 高风险或需要登录态时，优先使用持久上下文，并将 profile 放在 case 临时目录，结束后按敏感 Profile 处理。
 - MCP 模式先调用 `check_environment`，再 `launch_browser(headless=false, humanize=true, geoip=true, block_webrtc=true)`；需要属性访问日志时才加 `enable_trace=true`，并记录 trace 文件位置。
 - 鼠标、键盘、拖拽和滚动使用 Camoufox / MCP 原生输入路径；不要用 `page.evaluate` 合成事件作为高风控交互主路径。
@@ -302,8 +314,8 @@ npm install cloakbrowser puppeteer-core
 - 默认有头模式：`headless: false` / `headless=False`。
 - 默认启用拟人行为：`humanize: true` / `humanize=True`。
 - 不直接调用 `chromium.launch()`、`puppeteer.launch()` 或普通 `browserType.launch()`。
-- 如用户授权使用代理，才配置 `proxy`；需要让时区、语言、WebRTC 与出口 IP 保持一致时再启用 `geoip: true` / `geoip=True`。
-- 高风控、需要登录态、或目标检测空白无痕 Profile 时，优先使用 `launchPersistentContext` / `launch_persistent_context`，并把 Profile 放到 `case/tmp/cloak-profile/`。Profile 可能含登录态，清理前必须询问用户。
+- 如用户授权使用代理，才配置 `proxy`；需要让时区、语言、WebRTC 与出口 IP、fingerprint baseline 保持一致时再启用 `geoip: true` / `geoip=True`。
+- 高风控、需要登录态、或目标检测空白无痕 Profile 时，优先使用 `launchPersistentContext` / `launch_persistent_context`，并把 Profile 放到 `case/tmp/cloak-profile/`；首次成功后固化并复用该 baseline，不得每次随机新指纹。Profile 可能含登录态，清理前必须询问用户。
 - 减少 `page.evaluate`、大量 `waitForTimeout`、异常鼠标轨迹等会增加可见自动化信号的动作；只执行最小必要业务动作。
 - 点击、输入、滚动、拖拽必须走 CloakBrowser humanize / 官方交互方法；如果工具退回 `page.evaluate` 合成事件，视为 `isTrusted=false` 风险并暂停确认。
 - 出现登录、验证码、MFA、设备验证时暂停，让用户手动完成；不要破解或绕过。
@@ -377,8 +389,8 @@ browser = launch(
 2. 和用户确认取证模式为 CloakBrowser，并记录为本 case 后续唯一浏览器取证路线。
 3. 运行 `check_external_tools.js --require-cloakbrowser` 检测包、二进制和用户提供路径。
 4. 如果未安装或二进制缺失，暂停并让用户提供路径、确认安装或确认切换取证模式；不得自动 fallback 到普通 Playwright / Puppeteer。
-5. 创建临时目录：`case/tmp/browser/`、`case/tmp/cloak-profile/`、`case/tmp/har/`、`case/tmp/screenshots/`。
-6. 使用 CloakBrowser 官方包装器从第一次导航开始启动，有头模式并启用 `humanize`。
+5. 创建临时目录：`case/tmp/browser/`、`case/tmp/cloak-profile/`、`case/tmp/har/`、`case/tmp/screenshots/`，并准备 `case/notes/fingerprint-baseline.json`。
+6. 使用 CloakBrowser 官方包装器从第一次导航开始启动，有头模式并启用 `humanize`；首次成功后固化 `baselineId`，后续复用同一 profile / 指纹配置。
 7. 如果需要登录，进入手动登录等待流程。
 8. 触发最少量必要业务动作。
 9. 采集 Network、cURL、HAR、Initiator、调用栈、JS URL。

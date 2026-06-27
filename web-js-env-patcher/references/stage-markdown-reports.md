@@ -1,6 +1,6 @@
 # 分阶段中文 Markdown 报告规则
 
-本文件用于约束一个高难度 Web JS Node.js 补环境 case 在多轮对话中的阶段性总结产物。阶段报告不是最终总结的替代品，而是在每个合适的推进节点沉淀当前进展、修改内容、能力增量、WebAPI / 指纹变化、Bug 修复、测试结果、阻塞点和下一步计划，方便跨轮对话继续工作。
+本文件用于约束一个高难度 Web JS Node.js 补环境 case 在多轮对话中的阶段性总结产物。阶段报告不是最终总结的替代品，而是在每个合适的推进节点沉淀当前进展、修改内容、能力增量、WebAPI / 指纹变化、Bug 修复、测试结果、阻塞点、native 能力缺口和下一步计划，方便跨轮对话继续工作。
 
 ## 硬性规则
 
@@ -33,8 +33,11 @@
 
 - 完成一轮明确修改后，例如更新 Skill 流程、脚本、参考文档、addon helper、env 模块、signer 或 request 客户端。
 - 新增、迁移或重构一批 WebAPI 后，例如新增 `Navigator`、`Document`、`Location`、`Storage`、`Canvas`、`WebGL` 等对象或方法。
-- 新增或调整指纹能力后，例如 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何的真实值采样与回放。
+- 新增或调整指纹能力后，例如 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何的真实值采样与回放，并记录是否绑定同一 `baselineId`。
+- 固化或变更 fingerprint baseline 后，例如创建 `case/notes/fingerprint-baseline.json`、发现 baseline diff、切换代理 / profile / 工具。
+- 建立或调整最终请求 Session 请求链后，例如改为同一 session 刷新动态资源、生成 Cookie / challenge、发送目标 API 并销毁 session。
 - 修复一个关键 Bug 后，例如参数不一致、旧式 addon API 回退、toString 保护缺失、属性描述符错误、原型链错误、TLS 客户端选择错误。
+- 发现纯 JS、addon.node 当前 API、xbs isolated-vm 当前 API 都无法覆盖的 native 能力缺口后，需要记录阻塞行为、浏览器基线、建议新增 API、最小行为测试用例、用户选择和通过状态。
 - 完成一轮测试后，例如 fixture 对比、addon smoke、RuyiTrace 证据检查、代码质量检查、最终产物检查。
 - 发现阻塞点、需要用户确认、需要补样本或需要重新取证时。
 - 长时间任务中已经推进较多但尚未最终交付时，主动写入进度快照。
@@ -86,6 +89,8 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 - 参数位置：Query / Header / Body / Cookie。
 - 取证模式选择：ruyiPage + RuyiTrace / 仅 ruyiPage / Camoufox + camoufox-reverse-mcp / 仅 Camoufox / CloakBrowser / 用户手动取证 / AI 自行决定。
 - 最终请求 TLS 指纹兼容客户端选择。
+- 最终请求 Session 模式：默认启用；session client 类型、Cookie jar 策略和销毁方式。
+- 指纹基线状态：未创建 / 已创建 / 待采样；`baselineId` 与 baseline 文件路径。
 - 已提供的 JS 文件 / 加密文件 / bundle / chunk / sourcemap。
 - 是否需要登录，以及是否等待用户手动登录。
 - 已提供材料列表与缺失材料列表。
@@ -111,6 +116,8 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 - 参数位置：
 - 取证模式：
 - 最终请求 TLS 指纹兼容客户端：
+- 最终请求 Session 模式：
+- 指纹基线状态：
 - 已知 JS 文件 / 加密文件：
 - 是否需要登录：
 
@@ -185,9 +192,9 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 
 ## 7. 本阶段新增 / 修改的指纹能力
 
-| 指纹类型 | API | 实现策略 | 样本来源 | 回放方式 | 风险 |
-|---|---|---|---|---|---|
-| Canvas | toDataURL | 真实值回放 | 浏览器采样 | 按调用参数匹配 | 样本不足 |
+| 指纹类型 | API | 实现策略 | 样本来源 | baselineId | 回放方式 | 风险 |
+|---|---|---|---|---|---|---|
+| Canvas | toDataURL | 真实值回放 | 浏览器采样 |  | 按调用参数匹配 | 样本不足 |
 
 ## 8. 真实性保护变化
 
@@ -200,25 +207,33 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 - addon 使用情况：
 - fallback 原因：
 
-## 9. 本阶段测试内容与结果
+## 9. Session 请求链与指纹基线
+
+- fingerprint baseline：未涉及 / 已创建 / 已复用 / 发生 diff，文件：
+- baselineId：
+- 最终请求 Session：未涉及 / 已启用 / 不发真实请求
+- session 覆盖请求链：动态资源刷新 / Cookie 生成 / challenge / 目标 API
+- session 销毁方式：
+
+## 10. 本阶段测试内容与结果
 
 | 测试项 | 命令 / 方法 | 结果 | 备注 |
 |---|---|---|---|
 |  |  | 通过 / 失败 |  |
 
-## 10. 清理情况
+## 11. 清理情况
 
 - 已清理：
 - 保留证据：
 - 敏感材料处理：
 
-## 11. 风险与遗留问题
+## 12. 风险与遗留问题
 
 - 风险：
 - 未覆盖样本：
 - 需要用户确认：
 
-## 12. 下一步计划
+## 13. 下一步计划
 
 1.
 2.

@@ -1998,7 +1998,7 @@ node scripts/check_web_verify_patcher.js --require --markdown
 - Camoufox / CloakBrowser 必须从启动开始启用 `humanize` 并使用官方原生输入 / humanize 交互方法。
 - 普通 `dispatchEvent(new MouseEvent(...))`、`new KeyboardEvent(...)`、`page.evaluate(() => dispatchEvent(...))` 不能作为验证码或高风控交互主路径；无法保证可信输入时暂停让用户手动操作、切换工具或明确接受风险。
 
-## 测试 117：addon ABI 不兼容时先询问 Node.js v25.8.1
+## 测试 117：addon ABI 不兼容时先询问 Node.js v25.8.2
 
 输入场景：`node scripts/load_native_addon.js --json` 返回 `abiMismatch: true`，或错误信息包含 `NODE_MODULE_VERSION` / `compiled against`。
 
@@ -2010,10 +2010,10 @@ node scripts/check_node_runtime_compat.js --target addon --markdown
 
 期望：
 
-- 输出 addon 兼容 Node.js 版本 `v25.8.1`、当前 Node、当前 ABI 和 nvm 检测结果。
+- 输出 addon 兼容 Node.js 版本 `v25.8.2`、当前 Node、当前 ABI 和 nvm 检测结果。
 - 不得直接降级到 NativeProtect / JS fallback。
 - 必须让用户选择自动安装 nvm、手动安装 nvm、提供已安装 nvm 路径，或拒绝安装兼容 Node。
-- 用户同意后执行 `nvm install 25.8.1`、`nvm use 25.8.1` 并重新运行 `load_native_addon.js`。
+- 用户同意后执行 `nvm install 25.8.2`、`nvm use 25.8.2` 并重新运行 `load_native_addon.js`。
 - 只有用户拒绝或切换后仍失败，才允许 fallback，并在阶段报告、代码变更记忆和最终总结记录。
 
 ## 测试 118：isolated-vm ABI 不兼容时先询问 Node.js v26.3.1
@@ -2033,3 +2033,73 @@ node scripts/check_node_runtime_compat.js --target isolated-vm --markdown
 - 必须让用户选择自动安装 nvm、手动安装 nvm、提供已安装 nvm 路径，或拒绝安装兼容 Node。
 - 用户同意后执行 `nvm install 26.3.1`、`nvm use 26.3.1` 并重新运行 `check_xbs_isolated_vm.js --strict --json`。
 - 用户拒绝或切换后仍失败时，才允许提供当前 ABI 匹配的魔改 `isolated_vm.node` 构建产物，或改选不使用框架 / vm / jsEnv。
+
+## 测试 119：纯 JS、addon 与 xbs 都无法覆盖时必须输出 native 能力缺口闭环
+
+输入场景：目标检测依赖浏览器引擎级行为，例如 `document.all` 同时要求 `typeof document.all === "undefined"`、`document.all.length`、`document.all.item()` 和 `[object HTMLAllCollection]`，当前纯 JS fallback 无法满足，当前 addon.node 与 xbs isolated-vm API 也无法让最小行为测试通过。
+
+期望：
+
+- 先读取 `references/native-capability-gap.md`。
+- 不继续用状态化 getter、普通对象、Proxy 或只针对当前报错的 workaround 硬凑稳定方案。
+- 先排除实现不完整和已有 native API 用法错误；如果已有 addon / xbs API 可覆盖，必须改为 native-first。
+- 确认为能力缺口时，生成 `case/notes/native-capability-gap.md`，包含阻塞点、触发位置、真实浏览器基线、纯 JS / addon / xbs 当前结果、无法解决原因、建议新增 native API、最小行为测试用例和通过标准。
+- 给用户的测试用例必须是行为契约，能在真实浏览器和目标 native 后端运行，失败时输出具体差异。
+- 用户更新 addon.node 或 xbs isolated-vm 后，先运行该测试用例；通过后才继续补环境。
+- 用户拒绝扩展 native 能力且目标参数生成必须依赖该行为时，标记 case 阻塞；如果用户接受临时 workaround，阶段报告和最终总结必须写明“仅当前样本路径临时兼容”。
+
+## 测试 101：取证指纹基线必须固定
+
+输入场景：用户选择 ruyiPage / RuyiTrace / Camoufox / CloakBrowser 取证，第一次采样 `language=zh-CN`、`timezone=Asia/Shanghai`，第二次重新启动工具后随机成 `language=en-US` 或 WebGL / screen 改变。
+
+期望：
+
+- 必须先读取 `fingerprint-baseline-consistency.md`。
+- 第一次成功取证后生成 `case/notes/fingerprint-baseline.json` 和 `baselineId`。
+- 第二次采样前复用同一 profile / seed / 代理 / 语言 / 时区 / UA / Client Hints / screen / WebGL 基线。
+- 如果发现字段冲突，写入 `case/notes/fingerprint-baseline-diff.md` 并阻塞，不得混用样本。
+- `fingerprint.fixture.json` 必须包含同一 `baselineId`。
+
+## 测试 102：指纹 fixture baselineId 检查
+
+输入场景：`case/fixtures/fingerprint.fixture.json` 缺少 `baselineId`，或与 `case/notes/fingerprint-baseline.json` 中的 `baselineId` 不一致。
+
+执行：
+
+```bash
+node scripts/check_fingerprint_fixture.js --case-dir case --require canvas,webgl --markdown
+```
+
+期望：
+
+- 检查失败。
+- 明确指出缺少 fingerprint baseline 或 baselineId 不一致。
+- 要求重新采样或重新绑定同一 baseline，不能继续最终交付。
+
+## 测试 103：最终请求一律使用 Session 模式
+
+输入场景：`case/result/final.js` 使用 CycleTLS / impers / curl-cffi-node 或 `case/result/final.py` 使用 curl_cffi / cffi_curl / cyCronet 发请求，但只写了单次无状态请求函数，没有 session client、Cookie jar 或 close / destroy 逻辑。
+
+执行：
+
+```bash
+node scripts/check_final_artifact.js --case-dir case --markdown
+```
+
+期望：
+
+- 检查失败。
+- 要求最终请求使用 Session 模式，即使只有一个请求也要创建 session client。
+- 动态资源刷新、Cookie / challenge 生成、目标 API 必须复用同一 session。
+- 成功、失败或异常后必须销毁 session，并清理 Cookie jar / 敏感运行态。
+
+## 测试 104：Session 请求链通过示例
+
+输入场景：最终项目包含 `final.js`、`src/request/client.js`，`client.js` 导出 `createRequestSession()`，内部维护 Cookie jar，并提供 `request()` 与 `close()`；`final.js` 在 `try/finally` 中创建 session、刷新动态资源、生成参数、发送目标 API，最后调用 `session.close()`。
+
+期望：
+
+- `check_final_artifact.js` 不因 Session 模式缺失而失败。
+- 最终总结“TLS 请求验证与 Session 请求链”章节记录 session client 类型、请求链、Cookie jar 来源和销毁方式。
+- 最终项目仍不得包含浏览器自动化代码。
+

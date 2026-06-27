@@ -481,6 +481,19 @@ function assertIllegalInvocation(thisValue, Ctor) {
 6. 对内部状态优先使用 private slot，减少普通属性泄露。
 7. 多 isolate 场景下，原型链注册表会按 isolate 隔离；清理 isolate 时会同步清理对应 XBS 注册表。
 8. 宿主侧 `isolated-vm` API 保持原样，`xbs` 只存在于创建出的 Context 内。
+## 15.1 native 能力缺口处理
+
+选择 isolated-vm 时，addon-first 在 Context 内体现为 `window.xbs` / `globalThis.xbs` native-first。遇到目标浏览器行为无法补齐时，先确认是否已有 xbs API 可解决：`createProtoChains`、`createNativeFunction`、`createGetter`、`createSetter`、`createNativeCollection`、`getMimeTypesAndPlugins`、`createUndetectable`、`createInterceptor`、private slot 或 `xbs.dom.createDocument()`。如果已有 API 可覆盖但当前没用或参数错误，先修正实现，不得标记为能力缺口。
+
+如果真实浏览器行为已经采样，纯 JS fallback 不能可靠表达，当前 `window.xbs` / `xbs.dom` 也没有 API 或行为不足，必须读取 `references/native-capability-gap.md` 并输出能力缺口报告。报告中要写明：
+
+- 阻塞 API / 行为和触发位置。
+- 真实浏览器基线。
+- 纯 JS fallback、addon.node、xbs isolated-vm 三个后端的当前结果。
+- xbs 侧建议新增或增强的 API，例如增强 `xbs.createUndetectable()`、新增 `xbs.dom.createHTMLDDACollection()` 或扩展 `xbs.dom.createDocument()` 的选项。
+- 最小行为测试用例和通过标准。
+
+用户更新魔改 xbs isolated-vm 二进制后，必须先在 isolated-vm Context 内运行该测试用例。测试通过后才继续补环境；测试不通过时保持阻塞或让用户选择临时 workaround。
 
 ## 16. 快速自检
 
